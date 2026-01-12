@@ -9,7 +9,7 @@ import LoginPage from "./pages/LoginPage";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import Dashboard from "./pages/Dashboard";
-import InvoiceForm from "./pages/InvoiceForm";
+import VoiceInput from "./pages/VoiceInput";
 import InvoicePreview from "./pages/InvoicePreview";
 import InvoiceHistory from "./pages/InvoiceHistory";
 import Clients from "./pages/Clients";
@@ -39,8 +39,7 @@ const App = () => (
               </ProtectedRoute>
             }>
               <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/voice-input" element={<InvoiceForm />} />
-              <Route path="/invoice/new" element={<InvoiceForm />} />
+              <Route path="/voice-input" element={<VoiceInput />} />
               <Route path="/invoice-preview" element={<InvoicePreview />} />
               <Route path="/invoice-history" element={<InvoiceHistory />} />
               <Route path="/clients" element={<Clients />} />

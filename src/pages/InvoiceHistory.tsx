@@ -1,5 +1,4 @@
 import { motion } from "framer-motion";
-import { useNavigate } from "react-router-dom";
 import { 
   Search, 
   Filter, 
@@ -9,9 +8,7 @@ import {
   Trash2, 
   Share2,
   FileText,
-  MoreHorizontal,
-  Plus,
-  Mic
+  MoreHorizontal
 } from "lucide-react";
 import Header from "@/components/Header";
 import { Button } from "@/components/ui/button";
@@ -30,7 +27,6 @@ const invoices = [
 ];
 
 const InvoiceHistory = () => {
-  const navigate = useNavigate();
   const [selectedInvoice, setSelectedInvoice] = useState(invoices[0]);
 
   const getStatusColor = (status: string) => {
@@ -47,24 +43,6 @@ const InvoiceHistory = () => {
       <Header title="Invoice History" subtitle="View and manage all invoices" />
       
       <div className="p-6">
-        {/* Action Buttons */}
-        <div className="flex flex-wrap gap-3 mb-6">
-          <Button 
-            variant="accent" 
-            onClick={() => navigate('/invoice/new')}
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Create Invoice
-          </Button>
-          <Button 
-            variant="outline"
-            onClick={() => navigate('/voice-input')}
-          >
-            <Mic className="w-4 h-4 mr-2" />
-            Voice Input
-          </Button>
-        </div>
-
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           {/* Invoice List */}
           <motion.div
