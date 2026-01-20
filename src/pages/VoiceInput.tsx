@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useForm, useFieldArray } from "react-hook-form";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Mic, 
@@ -7,63 +8,470 @@ import {
   CheckCircle2, 
   Trash2,
   Sparkles,
-  Volume2
+  Volume2,
+  Send,
+  AlertCircle,
+  Plus,
+  X,
+  Loader2,
+  Users
 } from "lucide-react";
 import Header from "@/components/Header";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useNavigate } from "react-router-dom";
+import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
+import { voiceInvoiceService } from "@/services/voice-invoice.service";
+import { ClientService } from "@/services/client.service";
+import { productService } from "@/services/product.service";
+import { useToast } from "@/hooks/use-toast";
+import type { InvoiceFormData, VoiceInvoiceData } from "@/types/invoice";
+import type { Client } from "@/types/client";
+import type { Product } from "@/types/product";
 
 const VoiceInput = () => {
-  const [isRecording, setIsRecording] = useState(false);
-  const [transcription, setTranscription] = useState("");
-  const [detectedFields, setDetectedFields] = useState({
-    client: "",
-    items: [] as { name: string; quantity: number; rate: number }[],
-    tax: 0,
-    total: 0
-  });
   const navigate = useNavigate();
+  const { toast } = useToast();
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [voiceData, setVoiceData] = useState<VoiceInvoiceData | null>(null);
+  const [confidence, setConfidence] = useState<Record<string, number>>({});
+  const [autoFilledFields, setAutoFilledFields] = useState<Set<string>>(new Set());
+  const [showClientSelector, setShowClientSelector] = useState(false);
+  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [isLoadingClients, setIsLoadingClients] = useState(false);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(false);
+  const [showProductSelector, setShowProductSelector] = useState(false);
+  const [selectedItemIndex, setSelectedItemIndex] = useState<number | null>(null);
+  const [itemProductMatches, setItemProductMatches] = useState<Product[]>([]);
 
-  // Simulated voice input demo
-  const demoText = "Create invoice for ABC Pvt Ltd for web design services, quantity 1 at rate 25000 rupees with 18% GST";
-  
+  const clientService = new ClientService();
+
+  // Initialize react-hook-form
+  const { register, control, setValue, watch, handleSubmit, reset } = useForm<InvoiceFormData>({
+    defaultValues: {
+      clientId: undefined,
+      issuedDate: new Date().toISOString().split('T')[0],
+      dueDate: "",
+      items: [{ name: "", quantity: 1, unitPrice: 0, amount: 0 }],
+      discount: 0,
+      taxPercent: 18,
+      notes: "",
+    }
+  });
+
+  const { fields, append, remove } = useFieldArray({
+    control,
+    name: "items"
+  });
+
+  // Fetch clients on component mount
   useEffect(() => {
-    if (isRecording) {
-      let index = 0;
-      const interval = setInterval(() => {
-        if (index <= demoText.length) {
-          setTranscription(demoText.slice(0, index));
-          index++;
+    const fetchClients = async () => {
+      setIsLoadingClients(true);
+      try {
+        const response = await clientService.getClients({ 
+          status: 'ACTIVE',
+          limit: 1000 // Get all active clients
+        });
+        if (response.success && response.data) {
+          setClients(response.data.clients || []);
+        }
+      } catch (error) {
+        console.error('Failed to fetch clients:', error);
+        toast({
+          title: "Error",
+          description: "Failed to load clients list",
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoadingClients(false);
+      }
+    };
+    
+    fetchClients();
+  }, []);
+
+  // Fetch products on component mount
+  useEffect(() => {
+    const fetchProducts = async () => {
+      setIsLoadingProducts(true);
+      try {
+        const response = await productService.getProducts({ 
+          page: 0,
+          size: 200,
+          isActive: true
+        });
+        if (response.success && response.data) {
+          setProducts(response.data.content || []);
+        }
+      } catch (error) {
+        console.error('Failed to fetch products:', error);
+        toast({
+          title: "Error",
+          description: "Failed to load products list",
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoadingProducts(false);
+      }
+    };
+    
+    fetchProducts();
+  }, []);
+
+  // Speech recognition hook
+  const {
+    isRecording,
+    transcript,
+    interimTranscript,
+    error: speechError,
+    isSupported,
+    startRecording,
+    stopRecording,
+    resetTranscript
+  } = useSpeechRecognition({
+    language: 'en-IN',
+  });
+
+  // Process transcript and call backend API
+  const handleProcessTranscript = async () => {
+    // Get transcript from manual input if speech failed
+    let textToProcess = transcript;
+    if (speechError) {
+      const input = document.querySelector('[data-transcript-input]') as HTMLTextAreaElement;
+      if (input) textToProcess = input.value;
+    }
+    
+    if (!textToProcess.trim()) {
+      toast({
+        title: "No text provided",
+        description: "Please speak or type your invoice details.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setIsProcessing(true);
+      
+      const response = await voiceInvoiceService.parseVoiceTranscript(textToProcess);
+
+      console.log('[VoiceInput] API Response:', response);
+
+      if (response.success && response.data) {
+        // response.data already contains the invoice data directly
+        const invoiceData = response.data;
+        
+        console.log('[VoiceInput] Invoice Data:', invoiceData);
+        console.log('[VoiceInput] Items:', invoiceData.items);
+        console.log('[VoiceInput] Client Matches:', invoiceData.clientMatches);
+        
+        setVoiceData(invoiceData);
+        setConfidence({});
+        
+        // Handle client matching based on clientMatches array
+        const matchesCount = invoiceData.clientMatches?.length || 0;
+        
+        if (matchesCount > 1) {
+          // Multiple clients found - show selection dialog
+          console.log(`[VoiceInput] Found ${matchesCount} matching clients, showing selector`);
+          setShowClientSelector(true);
+          toast({
+            title: "Multiple Clients Found",
+            description: `Found ${matchesCount} matching clients. Please select one.`,
+            variant: "default",
+          });
+        } else if (matchesCount === 1) {
+          // Single client match - auto-select
+          const matchedClient = invoiceData.clientMatches![0];
+          console.log('[VoiceInput] Single client match, auto-selecting:', matchedClient.name);
+          setSelectedClient(matchedClient);
         } else {
-          clearInterval(interval);
-          setIsRecording(false);
-          // Parse detected fields
-          setDetectedFields({
-            client: "ABC Pvt Ltd",
-            items: [{ name: "Web Design Services", quantity: 1, rate: 25000 }],
-            tax: 18,
-            total: 29500
+          // No matches found
+          console.log('[VoiceInput] No client matches found for:', invoiceData.clientName);
+        }
+        
+        // Auto-fill form fields from voice data
+        autoFillFormFields(invoiceData);
+
+        // Count filled fields
+        const filledCount = [
+          invoiceData.clientName || matchesCount > 0,
+          invoiceData.issuedDate && invoiceData.issuedDate !== 'null' && invoiceData.issuedDate !== null,
+          invoiceData.dueDate && invoiceData.dueDate !== 'null' && invoiceData.dueDate !== null,
+          invoiceData.items?.length > 0,
+          invoiceData.discount !== null && invoiceData.discount !== undefined,
+          invoiceData.taxPercent !== null && invoiceData.taxPercent !== undefined,
+          invoiceData.notes && invoiceData.notes !== 'null' && invoiceData.notes !== null
+        ].filter(Boolean).length;
+
+        toast({
+          title: "Success!",
+          description: `Invoice data extracted successfully! ${filledCount} field${filledCount !== 1 ? 's' : ''} auto-filled.`,
+        });
+      } else {
+        throw new Error('Failed to parse voice transcript');
+      }
+    } catch (error: any) {
+      console.error('[VoiceInput] Error processing transcript:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to process voice input. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Auto-fill form fields from voice data
+  const autoFillFormFields = (data: VoiceInvoiceData) => {
+    const filledFields = new Set<string>();
+
+    console.log('[autoFillFormFields] Starting auto-fill with data:', data);
+
+    // Fill client - check for matches
+    const matchesCount = data.clientMatches?.length || 0;
+    
+    if (matchesCount === 1) {
+      // Single match - auto-select
+      const matchedClient = data.clientMatches![0];
+      console.log('[autoFillFormFields] Auto-selecting single matched client:', matchedClient.name);
+      setValue('clientId', matchedClient.id, { shouldValidate: true, shouldDirty: true });
+      setSelectedClient(matchedClient);
+      filledFields.add('clientId');
+    } else if (matchesCount > 1) {
+      // Multiple matches - will be handled by selection dialog
+      console.log('[autoFillFormFields] Multiple client matches, user must select');
+    } else {
+      // No matches
+      console.log('[autoFillFormFields] No client matches for:', data.clientName);
+    }
+
+    if (data.issuedDate && data.issuedDate !== 'null' && data.issuedDate !== null) {
+      setValue('issuedDate', data.issuedDate);
+      filledFields.add('issuedDate');
+    }
+
+    if (data.dueDate && data.dueDate !== 'null' && data.dueDate !== null) {
+      setValue('dueDate', data.dueDate);
+      filledFields.add('dueDate');
+    }
+
+    if (data.items && data.items.length > 0) {
+      // Process items with product matches
+      const processedItems = data.items.map((item) => {
+        const productMatchesCount = item.productMatches?.length || 0;
+        
+        if (productMatchesCount === 1) {
+          // Single match - auto-select
+          const matchedProduct = item.productMatches![0];
+          return {
+            ...item,
+            name: matchedProduct.name,
+            unitPrice: item.unitPrice || matchedProduct.salePrice,
+            amount: (item.quantity || 1) * (item.unitPrice || matchedProduct.salePrice),
+            productId: matchedProduct.id,
+            productMatches: item.productMatches
+          };
+        } else if (productMatchesCount > 1) {
+          // Multiple matches - keep productMatches for user selection
+          return {
+            ...item,
+            unitPrice: item.unitPrice || 0,
+            amount: item.amount || 0,
+            productMatches: item.productMatches
+          };
+        } else {
+          // No matches
+          return {
+            ...item,
+            unitPrice: item.unitPrice || 0,
+            amount: item.amount || 0
+          };
+        }
+      });
+      
+      setValue('items', processedItems as any);
+      filledFields.add('items');
+    }
+
+    if (data.discount !== null && data.discount !== undefined) {
+      setValue('discount', data.discount);
+      filledFields.add('discount');
+    }
+
+    if (data.taxPercent !== null && data.taxPercent !== undefined) {
+      setValue('taxPercent', data.taxPercent);
+      filledFields.add('taxPercent');
+    }
+
+    if (data.notes && data.notes !== 'null' && data.notes !== null) {
+      setValue('notes', data.notes);
+      filledFields.add('notes');
+    }
+
+    // Set calculated amounts from API
+    if (data.subtotalAmount !== null && data.subtotalAmount !== undefined) {
+      setValue('subtotalAmount', data.subtotalAmount);
+    }
+
+    if (data.totalAmount !== null && data.totalAmount !== undefined) {
+      setValue('totalAmount', data.totalAmount);
+    }
+
+    setAutoFilledFields(filledFields);
+  };
+
+  // Toggle recording
+  const handleToggleRecording = () => {
+    if (isRecording) {
+      stopRecording();
+      // Wait a bit for the final transcript to be captured, then process
+      setTimeout(() => {
+        const finalTranscript = transcript.trim();
+        if (finalTranscript) {
+          handleProcessTranscript();
+        } else {
+          toast({
+            title: "No speech detected",
+            description: "Please speak and try again, or use manual text input.",
+            variant: "destructive",
           });
         }
-      }, 50);
-      return () => clearInterval(interval);
+      }, 500); // 500ms delay to ensure transcript is finalized
+    } else {
+      startRecording();
     }
-  }, [isRecording]);
-
-  const handleStartRecording = () => {
-    setIsRecording(true);
-    setTranscription("");
-    setDetectedFields({ client: "", items: [], tax: 0, total: 0 });
   };
 
-  const handleStopRecording = () => {
-    setIsRecording(false);
-  };
-
+  // Handle clear all
   const handleClear = () => {
-    setTranscription("");
-    setDetectedFields({ client: "", items: [], tax: 0, total: 0 });
+    resetTranscript();
+    setVoiceData(null);
+    setConfidence({});
+    setAutoFilledFields(new Set());
+    setSelectedClient(null);
+    setShowClientSelector(false);
+    reset();
   };
+
+  // Handle client selection from multiple matches dialog
+  const handleClientSelect = (client: Client) => {
+    setSelectedClient(client);
+    setValue('clientId', client.id, { shouldValidate: true, shouldDirty: true });
+    setAutoFilledFields(prev => new Set(prev).add('clientId'));
+    setShowClientSelector(false);
+    toast({
+      title: "Client Selected",
+      description: `${client.name} has been selected for this invoice.`,
+    });
+  };
+
+  // Handle product selection for line items
+  const handleProductSelect = (productId: string, index: number) => {
+    const product = products.find(p => p.id === productId);
+    if (product) {
+      setValue(`items.${index}.name`, product.name);
+      setValue(`items.${index}.unitPrice`, product.salePrice);
+      setValue(`items.${index}.productId` as any, product.id);
+      // Clear product matches after selection
+      setValue(`items.${index}.productMatches` as any, null);
+    }
+  };
+
+  // Handle opening product matches dialog
+  const handleShowProductMatches = (index: number) => {
+    const item = watch(`items.${index}` as any);
+    if (item?.productMatches && item.productMatches.length > 0) {
+      setSelectedItemIndex(index);
+      setItemProductMatches(item.productMatches);
+      setShowProductSelector(true);
+    }
+  };
+
+  // Handle product selection from matches dialog
+  const handleProductMatchSelect = (product: Product) => {
+    if (selectedItemIndex !== null) {
+      setValue(`items.${selectedItemIndex}.name`, product.name);
+      setValue(`items.${selectedItemIndex}.unitPrice`, product.salePrice);
+      setValue(`items.${selectedItemIndex}.productId` as any, product.id);
+      // Clear product matches after selection
+      setValue(`items.${selectedItemIndex}.productMatches` as any, null);
+      
+      // Update amount
+      const quantity = watch(`items.${selectedItemIndex}.quantity` as any);
+      setValue(`items.${selectedItemIndex}.amount` as any, quantity * product.salePrice);
+      
+      setShowProductSelector(false);
+      setSelectedItemIndex(null);
+      setItemProductMatches([]);
+      
+      toast({
+        title: "Product Selected",
+        description: `${product.name} has been selected for this line item.`,
+      });
+    }
+  };
+
+  // Handle client selection from dropdown
+  const handleClientChange = (clientId: string) => {
+    console.log('[handleClientChange] Selected clientId:', clientId, 'Type:', typeof clientId);
+    const client = clients.find(c => c.id === clientId);
+    if (client) {
+      console.log('[handleClientChange] Found client:', client);
+      setSelectedClient(client);
+      setValue('clientId', clientId, { shouldValidate: true, shouldDirty: true });
+      console.log('[handleClientChange] After setValue, watch clientId:', watch('clientId'));
+    }
+  };
+
+  // Handle form submit
+  const onSubmit = (data: InvoiceFormData) => {
+    console.log('[VoiceInput] Submitting invoice data:', data);
+    // Navigate to invoice preview with data
+    navigate("/invoice-preview", { state: { invoiceData: data } });
+  };
+
+  // Calculate confidence badge color
+  const getConfidenceBadgeColor = (field: string): string => {
+    const conf = confidence[field] || 0;
+    if (conf >= 0.8) return "bg-green-500/20 text-green-700 border-green-500/30";
+    if (conf >= 0.5) return "bg-yellow-500/20 text-yellow-700 border-yellow-500/30";
+    return "bg-red-500/20 text-red-700 border-red-500/30";
+  };
+
+  // Calculate totals
+  const items = watch('items');
+  const discount = watch('discount');
+  const taxPercent = watch('taxPercent');
+
+  const subtotal = items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
+  const discountAmount = (subtotal * discount) / 100;
+  const taxableAmount = subtotal - discountAmount;
+  const taxAmount = (taxableAmount * taxPercent) / 100;
+  const total = taxableAmount + taxAmount;
 
   return (
     <div className="min-h-screen">
@@ -81,7 +489,7 @@ const VoiceInput = () => {
             {/* Mic Button */}
             <div className="flex flex-col items-center mb-8">
               <motion.button
-                onClick={isRecording ? handleStopRecording : handleStartRecording}
+                onClick={handleToggleRecording}
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 className={`voice-button ${isRecording ? 'recording' : ''}`}
@@ -132,27 +540,88 @@ const VoiceInput = () => {
             {/* Transcription Area */}
             <div className="mb-6">
               <label className="text-sm font-medium text-muted-foreground mb-2 block">
-                Speech-to-Text Output
+                Speech-to-Text Output {speechError && "(or type manually)"}
               </label>
-              <div className="min-h-[120px] p-4 rounded-xl bg-secondary/50 border-2 border-dashed border-border">
-                <AnimatePresence mode="wait">
-                  {transcription ? (
-                    <motion.p
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="text-foreground leading-relaxed"
-                    >
-                      {transcription}
-                      {isRecording && <span className="animate-pulse">|</span>}
-                    </motion.p>
-                  ) : (
-                    <p className="text-muted-foreground italic">
-                      Your spoken words will appear here...
-                    </p>
-                  )}
-                </AnimatePresence>
-              </div>
+              {speechError ? (
+                <Textarea
+                  placeholder="Type your invoice details here... Example: Create invoice for ABC Company for Web Development services quantity 5 at rate 1000 with 18% GST"
+                  value={transcript}
+                  onChange={(e) => {
+                    // Manual input when speech fails - need to use a ref or state
+                    const input = document.querySelector('[data-transcript-input]') as HTMLTextAreaElement;
+                    if (input) input.value = e.target.value;
+                  }}
+                  data-transcript-input
+                  className="min-h-[120px] p-4 rounded-xl bg-secondary/50 border-2 border-dashed border-border"
+                  rows={5}
+                />
+              ) : (
+                <div className="min-h-[120px] p-4 rounded-xl bg-secondary/50 border-2 border-dashed border-border">
+                  <AnimatePresence mode="wait">
+                    {transcript || interimTranscript ? (
+                      <motion.p
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="text-foreground leading-relaxed"
+                      >
+                        {transcript}
+                        {interimTranscript && <span className="text-muted-foreground italic"> {interimTranscript}</span>}
+                        {isRecording && <span className="animate-pulse">|</span>}
+                      </motion.p>
+                    ) : (
+                      <p className="text-muted-foreground italic">
+                        Your spoken words will appear here...
+                      </p>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )}
             </div>
+
+            {/* Error Display */}
+            {speechError && (
+              <Alert variant="destructive" className="mb-6">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  <p className="font-semibold">{speechError}</p>
+                  {speechError.includes('Network') && (
+                    <div className="mt-2 text-sm">
+                      <p className="mb-1">The Web Speech API requires internet connection to Google's servers.</p>
+                      <p className="mb-1">Possible solutions:</p>
+                      <ul className="list-disc list-inside ml-2">
+                        <li>Check your internet connection</li>
+                        <li>Disable VPN or proxy if using one</li>
+                        <li>Try a different network (mobile hotspot)</li>
+                        <li>Check if your firewall blocks Google APIs</li>
+                        <li>Or type the transcript manually above and click "Process Text" below</li>
+                      </ul>
+                    </div>
+                  )}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {/* Manual Process Button - shows when speech fails */}
+            {speechError && (
+              <Button
+                onClick={handleProcessTranscript}
+                disabled={isProcessing}
+                className="w-full mb-6"
+                size="lg"
+              >
+                {isProcessing ? (
+                  <>
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <Send className="mr-2 h-5 w-5" />
+                    Process Text
+                  </>
+                )}
+              </Button>
+            )}
 
             {/* Voice Hint */}
             <div className="p-4 rounded-xl bg-accent/10 border border-accent/20">
@@ -172,13 +641,19 @@ const VoiceInput = () => {
               <Button
                 variant={isRecording ? "destructive" : "accent"}
                 size="lg"
-                onClick={isRecording ? handleStopRecording : handleStartRecording}
+                onClick={handleToggleRecording}
+                disabled={!isSupported || isProcessing}
                 className="flex-1"
               >
-                {isRecording ? (
+                {isProcessing ? (
+                  <>
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    Processing...
+                  </>
+                ) : isRecording ? (
                   <>
                     <MicOff className="w-5 h-5 mr-2" />
-                    Stop Recording
+                    Stop & Process
                   </>
                 ) : (
                   <>
@@ -187,111 +662,582 @@ const VoiceInput = () => {
                   </>
                 )}
               </Button>
-              <Button variant="outline" size="lg" onClick={handleClear}>
+              <Button 
+                variant="outline" 
+                size="lg" 
+                onClick={handleClear}
+                disabled={isProcessing}
+              >
                 <Trash2 className="w-5 h-5" />
               </Button>
             </div>
           </motion.div>
 
-          {/* Detected Fields Section */}
+          {/* Invoice Form Section */}
           <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
-            className="card-elevated p-8"
+            className="card-elevated p-8 relative"
           >
+            {/* Processing Overlay */}
+            {isProcessing && (
+              <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-10 rounded-xl flex items-center justify-center">
+                <div className="text-center">
+                  <Loader2 className="w-12 h-12 text-accent animate-spin mx-auto mb-4" />
+                  <p className="text-lg font-semibold text-foreground">Processing Invoice...</p>
+                  <p className="text-sm text-muted-foreground mt-2">AI is extracting data from your input</p>
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center gap-2 mb-6">
               <Sparkles className="w-5 h-5 text-accent" />
-              <h3 className="text-lg font-semibold text-foreground">AI Detected Fields</h3>
+              <h3 className="text-lg font-semibold text-foreground">Invoice Details</h3>
+              {autoFilledFields.size > 0 && (
+                <Badge variant="outline" className="ml-auto bg-green-50 text-green-700 border-green-300">
+                  <Sparkles className="w-3 h-3 mr-1" />
+                  AI Filled
+                </Badge>
+              )}
             </div>
 
-            <div className="space-y-4">
-              {/* Client */}
-              <div className="p-4 rounded-xl bg-secondary/50">
-                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Client Name
-                </label>
-                <p className="text-lg font-medium text-foreground mt-1">
-                  {detectedFields.client || "—"}
-                </p>
-              </div>
-
-              {/* Items */}
-              <div className="p-4 rounded-xl bg-secondary/50">
-                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Items / Services
-                </label>
-                {detectedFields.items.length > 0 ? (
-                  <div className="mt-2 space-y-2">
-                    {detectedFields.items.map((item, index) => (
-                      <div key={index} className="flex justify-between items-center">
-                        <span className="text-foreground">{item.name}</span>
-                        <span className="text-muted-foreground">
-                          {item.quantity} × ₹{item.rate.toLocaleString()}
-                        </span>
-                      </div>
+            <form className="space-y-6">
+              {/* Client Selection */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="clientId" className="text-sm font-medium">
+                    Client <span className="text-destructive">*</span>
+                  </Label>
+                  {selectedClient && (
+                    <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-300">
+                      <Users className="w-3 h-3 mr-1" />
+                      Matched Client
+                    </Badge>
+                  )}
+                  {voiceData?.clientMatches && voiceData.clientMatches.length > 1 && !selectedClient && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowClientSelector(true)}
+                    >
+                      <Users className="w-4 h-4 mr-1" />
+                      Select Client ({voiceData.clientMatches.length})
+                    </Button>
+                  )}
+                </div>
+                <Select
+                  value={selectedClient?.id || watch('clientId')?.toString() || ''}
+                  onValueChange={handleClientChange}
+                  disabled={isProcessing || isLoadingClients}
+                >
+                  <SelectTrigger 
+                    className={autoFilledFields.has('clientId') ? 'bg-green-50 border-green-300' : ''}
+                  >
+                    <SelectValue placeholder={isLoadingClients ? "Loading clients..." : "Select a client"}>
+                      {selectedClient ? (
+                        <div className="flex flex-col">
+                          <span className="font-medium">{selectedClient.name}</span>
+                          {selectedClient.company && (
+                            <span className="text-xs text-muted-foreground">{selectedClient.company}</span>
+                          )}
+                        </div>
+                      ) : (
+                        "Select a client"
+                      )}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {clients.map((client) => (
+                      <SelectItem 
+                        key={client.id} 
+                        value={client.id}
+                        className={selectedClient?.id === client.id 
+                          ? 'bg-orange-100 font-semibold hover:bg-orange-50 focus:bg-orange-100' 
+                          : 'hover:bg-orange-50'
+                        }
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className="flex flex-col">
+                            <span className="font-medium">{client.name}</span>
+                            {client.company && (
+                              <span className="text-xs text-muted-foreground">{client.company}</span>
+                            )}
+                          </div>
+                          {selectedClient?.id === client.id && (
+                            <CheckCircle2 className="w-4 h-4 text-orange-600 ml-auto" />
+                          )}
+                        </div>
+                      </SelectItem>
                     ))}
-                  </div>
-                ) : (
-                  <p className="text-lg font-medium text-foreground mt-1">—</p>
+                  </SelectContent>
+                </Select>
+                {selectedClient && (
+                  <p className="text-xs text-muted-foreground">
+                    {selectedClient.email && `Email: ${selectedClient.email}`}
+                    {selectedClient.mobile && ` | Mobile: ${selectedClient.mobile}`}
+                  </p>
                 )}
               </div>
 
-              {/* Tax */}
+              {/* Dates */}
               <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 rounded-xl bg-secondary/50">
-                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Tax Rate
-                  </label>
-                  <p className="text-lg font-medium text-foreground mt-1">
-                    {detectedFields.tax ? `${detectedFields.tax}%` : "—"}
-                  </p>
+                <div className="space-y-2">
+                  <Label htmlFor="issuedDate" className="text-sm font-medium">
+                    Issued Date <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    id="issuedDate"
+                    type="date"
+                    {...register('issuedDate')}
+                    disabled={isProcessing}
+                    className={autoFilledFields.has('issuedDate') ? 'bg-green-50 border-green-300' : ''}
+                  />
                 </div>
-                <div className="p-4 rounded-xl bg-accent/10 border border-accent/20">
-                  <label className="text-xs font-medium text-accent uppercase tracking-wider">
-                    Total Amount
-                  </label>
-                  <p className="text-lg font-bold text-accent mt-1">
-                    {detectedFields.total ? `₹${detectedFields.total.toLocaleString()}` : "—"}
-                  </p>
+                <div className="space-y-2">
+                  <Label htmlFor="dueDate" className="text-sm font-medium">
+                    Due Date
+                  </Label>
+                  <Input
+                    id="dueDate"
+                    type="date"
+                    {...register('dueDate')}
+                    disabled={isProcessing}
+                    className={autoFilledFields.has('dueDate') ? 'bg-green-50 border-green-300' : ''}
+                  />
                 </div>
               </div>
-            </div>
 
-            {/* Voice Commands */}
-            <div className="mt-6 p-4 rounded-xl border border-border">
-              <h4 className="text-sm font-medium text-foreground mb-3">Quick Voice Commands</h4>
-              <div className="flex flex-wrap gap-2">
-                {["Add item", "Change quantity", "Apply discount", "Save draft"].map((cmd) => (
-                  <span 
-                    key={cmd}
-                    className="px-3 py-1.5 rounded-lg bg-secondary text-sm text-muted-foreground"
+              {/* Items Section */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">
+                    Items / Services <span className="text-destructive">*</span>
+                  </Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isProcessing}
+                    onClick={() => append({ name: "", quantity: 1, unitPrice: 0, amount: 0 })}
                   >
-                    "{cmd}"
-                  </span>
-                ))}
-              </div>
-            </div>
+                    <Plus className="w-4 h-4 mr-1" />
+                    Add Item
+                  </Button>
+                </div>
 
-            {/* Generate Button */}
-            <div className="flex gap-3 mt-6">
-              <Button
-                variant="accent"
-                size="lg"
-                className="flex-1"
-                disabled={!detectedFields.client}
-                onClick={() => navigate("/invoice-preview")}
-              >
-                <CheckCircle2 className="w-5 h-5 mr-2" />
-                Confirm & Generate Invoice
-              </Button>
-              <Button variant="outline" size="lg">
-                <RefreshCw className="w-5 h-5" />
-              </Button>
-            </div>
+                <div className="space-y-3">
+                  {fields.map((field, index) => {
+                    const item = watch(`items.${index}` as any);
+                    const productMatchesCount = item?.productMatches?.length || 0;
+                    const hasMultipleMatches = productMatchesCount > 1;
+                    const hasSingleMatch = productMatchesCount === 1;
+                    
+                    return (
+                      <Card key={field.id} className="p-4 bg-secondary/30">
+                        <div className="space-y-3">
+                          <div className="flex items-start gap-2">
+                            <div className="flex-1 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <Label className="text-xs">Product / Service</Label>
+                                {hasMultipleMatches && (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleShowProductMatches(index)}
+                                    className="h-7 px-2 text-xs bg-orange-50 hover:bg-orange-100 border-orange-300 text-orange-700"
+                                  >
+                                    <Sparkles className="w-3 h-3 mr-1" />
+                                    {productMatchesCount} Matches Found
+                                  </Button>
+                                )}
+                                {hasSingleMatch && (
+                                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300 text-xs">
+                                    <CheckCircle2 className="w-3 h-3 mr-1" />
+                                    Auto-matched
+                                  </Badge>
+                                )}
+                              </div>
+                              <Select
+                                value={watch(`items.${index}.productId` as any) || ''}
+                                onValueChange={(value) => handleProductSelect(value, index)}
+                                disabled={isProcessing || isLoadingProducts}
+                              >
+                                <SelectTrigger 
+                                  className={autoFilledFields.has('items') ? 'bg-green-50 border-green-300' : ''}
+                                >
+                                  <SelectValue placeholder="Select product or service" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {isLoadingProducts ? (
+                                    <SelectItem value="loading" disabled>Loading products...</SelectItem>
+                                  ) : products.length === 0 ? (
+                                    <SelectItem value="empty" disabled>No products available</SelectItem>
+                                  ) : (
+                                    products.map((product) => (
+                                      <SelectItem key={product.id} value={product.id}>
+                                        <div className="flex items-center justify-between w-full">
+                                          <span>{product.name}</span>
+                                          <Badge variant="outline" className="ml-2 text-xs">
+                                            {product.type}
+                                          </Badge>
+                                        </div>
+                                      </SelectItem>
+                                    ))
+                                  )}
+                                </SelectContent>
+                              </Select>
+                              {/* Hidden input to store the product name for form submission */}
+                              <input
+                                type="hidden"
+                                {...register(`items.${index}.name` as const)}
+                              />
+                            </div>
+                            {fields.length > 1 && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                disabled={isProcessing}
+                                onClick={() => remove(index)}
+                                className="mt-6 text-destructive hover:text-destructive"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            )}
+                          </div>
+
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="space-y-2">
+                            <Label className="text-xs">Quantity</Label>
+                            <Input
+                              type="number"
+                              {...register(`items.${index}.quantity` as const, { valueAsNumber: true })}
+                              placeholder="1"
+                              min="1"
+                              disabled={isProcessing}
+                              className={autoFilledFields.has('items') ? 'bg-green-50 border-green-300' : ''}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-xs">Unit Price (₹)</Label>
+                            <Input
+                              type="number"
+                              {...register(`items.${index}.unitPrice` as const, { valueAsNumber: true })}
+                              placeholder="0.00"
+                              step="0.01"
+                              min="0"
+                              disabled={isProcessing}
+                              className={autoFilledFields.has('items') ? 'bg-green-50 border-green-300' : ''}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-xs">Amount (₹)</Label>
+                            <Input
+                              type="number"
+                              value={watch(`items.${index}.quantity`) * watch(`items.${index}.unitPrice`) || 0}
+                              readOnly
+                              className="bg-muted"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </Card>
+                  );
+                  })}
+                </div>
+              </div>
+
+              {/* Financial Details */}
+              <div className="space-y-4 p-4 rounded-xl bg-accent/5 border border-accent/20">
+                <h4 className="font-semibold text-foreground">Financial Summary</h4>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="discount" className="text-sm font-medium">
+                      Discount (%)
+                    </Label>
+                    <Input
+                      id="discount"
+                      type="number"
+                      {...register('discount', { valueAsNumber: true })}
+                      placeholder="0"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      disabled={isProcessing}
+                      className={autoFilledFields.has('discount') ? 'bg-green-50 border-green-300' : ''}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="taxPercent" className="text-sm font-medium">
+                      Tax (%)
+                    </Label>
+                    <Input
+                      id="taxPercent"
+                      type="number"
+                      {...register('taxPercent', { valueAsNumber: true })}
+                      placeholder="18"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      disabled={isProcessing}
+                      className={autoFilledFields.has('taxPercent') ? 'bg-green-50 border-green-300' : ''}
+                    />
+                  </div>
+                </div>
+
+                {/* Calculation Summary */}
+                <div className="space-y-2 pt-3 border-t border-border">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Subtotal:</span>
+                    <span className="font-medium">₹{subtotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Discount ({discount}%):</span>
+                    <span className="font-medium text-red-600">-₹{discountAmount.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Tax ({taxPercent}%):</span>
+                    <span className="font-medium">₹{taxAmount.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-lg font-bold pt-2 border-t border-border">
+                    <span className="text-accent">Total Amount:</span>
+                    <span className="text-accent">₹{total.toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div className="space-y-2">
+                <Label htmlFor="notes" className="text-sm font-medium">
+                  Notes / Additional Information
+                </Label>
+                <Textarea
+                  id="notes"
+                  {...register('notes')}
+                  placeholder="Add any additional notes or terms..."
+                  rows={3}
+                  disabled={isProcessing}
+                  className={autoFilledFields.has('notes') ? 'bg-green-50 border-green-300' : ''}
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-4">
+                <Button
+                  type="button"
+                  variant="accent"
+                  size="lg"
+                  className="flex-1"
+                  disabled={!watch('clientId') || fields.length === 0}
+                  onClick={() => {
+                    const formData = watch();
+                    
+                    console.log('[Submit] Raw formData:', formData);
+                    console.log('[Submit] formData.clientId:', formData.clientId, 'Type:', typeof formData.clientId);
+                    console.log('[Submit] selectedClient:', selectedClient);
+                    console.log('[Submit] selectedClient.id:', selectedClient?.id, 'Type:', typeof selectedClient?.id);
+                    
+                    // Calculate amount for each item before submission
+                    const itemsWithAmount = formData.items.map(item => ({
+                      ...item,
+                      amount: item.quantity * item.unitPrice
+                    }));
+                    
+                    // Calculate financial totals
+                    const calculatedSubtotal = itemsWithAmount.reduce((sum, item) => sum + (item.amount || 0), 0);
+                    const calculatedDiscountAmount = (calculatedSubtotal * (formData.discount || 0)) / 100;
+                    const calculatedTaxableAmount = calculatedSubtotal - calculatedDiscountAmount;
+                    const calculatedTaxAmount = (calculatedTaxableAmount * (formData.taxPercent || 0)) / 100;
+                    const calculatedTotal = calculatedTaxableAmount + calculatedTaxAmount;
+                    
+                    // Prepare final invoice data with calculated amounts
+                    const invoiceDataToSubmit: InvoiceFormData = {
+                      ...formData,
+                      items: itemsWithAmount,
+                      clientId: selectedClient ? selectedClient.id : formData.clientId,
+                      subtotalAmount: calculatedSubtotal,
+                      totalAmount: calculatedTotal,
+                    };
+                    
+                    console.log('Invoice Data to Submit:', invoiceDataToSubmit);
+                    console.log('Invoice clientId:', invoiceDataToSubmit.clientId, 'Type:', typeof invoiceDataToSubmit.clientId);
+                    console.log('Subtotal Amount:', invoiceDataToSubmit.subtotalAmount);
+                    console.log('Total Amount:', invoiceDataToSubmit.totalAmount);
+                    
+                    // Navigate to invoice preview with form data
+                    navigate("/invoice-preview", { 
+                      state: { 
+                        invoiceData: invoiceDataToSubmit,
+                        selectedClient: selectedClient 
+                      } 
+                    });
+                  }}
+                >
+                  <CheckCircle2 className="w-5 h-5 mr-2" />
+                  Generate Invoice
+                </Button>
+                <Button 
+                  type="button"
+                  variant="outline" 
+                  size="lg" 
+                  onClick={handleClear}
+                >
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Clear
+                </Button>
+              </div>
+            </form>
           </motion.div>
         </div>
       </div>
+
+      {/* Client Selector Dialog */}
+      <Dialog open={showClientSelector} onOpenChange={setShowClientSelector}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="w-5 h-5" />
+              Select Client
+            </DialogTitle>
+            <DialogDescription>
+              Multiple clients match "{voiceData?.clientName}". Please select the correct one.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 mt-4">
+            {voiceData?.clientMatches?.map((client) => (
+              <Card
+                key={client.id}
+                className="p-4 hover:bg-accent/50 cursor-pointer transition-colors"
+                onClick={() => handleClientSelect(client)}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="space-y-1">
+                    <h4 className="font-semibold text-foreground">{client.name}</h4>
+                    {client.company && (
+                      <p className="text-sm text-muted-foreground">{client.company}</p>
+                    )}
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {client.email && (
+                        <Badge variant="outline" className="text-xs">
+                          {client.email}
+                        </Badge>
+                      )}
+                      {client.mobile && (
+                        <Badge variant="outline" className="text-xs">
+                          {client.mobile}
+                        </Badge>
+                      )}
+                      {client.gstNumber && (
+                        <Badge variant="outline" className="text-xs">
+                          GST: {client.gstNumber}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  <Badge variant={client.isActive ? "default" : "secondary"}>
+                    {client.isActive ? "Active" : "Inactive"}
+                  </Badge>
+                </div>
+              </Card>
+            ))}
+          </div>
+
+          <div className="mt-4 pt-4 border-t">
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => setShowClientSelector(false)}
+            >
+              Cancel
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Product Matches Selection Dialog */}
+      <Dialog open={showProductSelector} onOpenChange={setShowProductSelector}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-accent" />
+              Multiple Products Found
+            </DialogTitle>
+            <DialogDescription>
+              We found {itemProductMatches.length} matching products for "{watch(`items.${selectedItemIndex}` as any)?.name}". 
+              Please select the correct one.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 mt-4">
+            {itemProductMatches.map((product) => (
+              <Card
+                key={product.id}
+                className="p-4 hover:bg-accent/50 cursor-pointer transition-colors border-2 hover:border-accent"
+                onClick={() => handleProductMatchSelect(product)}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="space-y-2 flex-1">
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-semibold text-foreground">{product.name}</h4>
+                      <Badge 
+                        variant="outline" 
+                        className={product.type === 'GOODS' 
+                          ? 'bg-blue-50 text-blue-700 border-blue-300' 
+                          : 'bg-purple-50 text-purple-700 border-purple-300'
+                        }
+                      >
+                        {product.type}
+                      </Badge>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <span className="text-muted-foreground">HSN/SAC:</span>
+                        <span className="ml-2 font-medium">{product.hsnOrSac}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">GST Rate:</span>
+                        <span className="ml-2 font-medium">{product.gstRate}%</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">UOM:</span>
+                        <span className="ml-2 font-medium">{product.uom}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Sale Price:</span>
+                        <span className="ml-2 font-medium text-green-600">₹{product.salePrice.toLocaleString()}</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <Badge variant={product.isActive ? "default" : "secondary"} className="ml-3">
+                    {product.isActive ? "Active" : "Inactive"}
+                  </Badge>
+                </div>
+              </Card>
+            ))}
+          </div>
+
+          <div className="mt-4 pt-4 border-t">
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => {
+                setShowProductSelector(false);
+                setSelectedItemIndex(null);
+                setItemProductMatches([]);
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

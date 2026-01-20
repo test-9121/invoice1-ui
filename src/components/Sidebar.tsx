@@ -5,13 +5,17 @@ import {
   Mic, 
   FileText, 
   Users, 
+  UserCog,
+  Shield,
+  Key,
   BarChart3, 
   Palette, 
   Settings, 
   HelpCircle,
   LogOut,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Receipt
 } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
@@ -20,8 +24,12 @@ import { useAuth } from "@/contexts/AuthContext";
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
   { icon: Mic, label: "Create Invoice", path: "/voice-input" },
+  { icon: Receipt, label: "Invoices", path: "/invoices" },
   { icon: FileText, label: "Work Orders", path: "/work-orders" },
   { icon: Users, label: "Clients", path: "/clients" },
+  { icon: UserCog, label: "Users", path: "/users" },
+  { icon: Shield, label: "Roles", path: "/roles" },
+  { icon: Key, label: "Permissions", path: "/permissions" },
   { icon: BarChart3, label: "Reports", path: "/reports" },
   { icon: Palette, label: "Templates", path: "/templates" },
   { icon: Settings, label: "Settings", path: "/settings" },

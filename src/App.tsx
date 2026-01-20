@@ -12,8 +12,13 @@ import Dashboard from "./pages/Dashboard";
 import VoiceInput from "./pages/VoiceInput";
 import InvoicePreview from "./pages/InvoicePreview";
 import InvoiceHistory from "./pages/InvoiceHistory";
+import Invoices from "./pages/Invoices";
 import Clients from "./pages/Clients";
 import ClientForm from "./pages/ClientForm";
+import Users from "./pages/Users";
+import Roles from "./pages/Roles";
+import RolePermissions from "./pages/RolePermissions";
+import Permissions from "./pages/Permissions";
 import Reports from "./pages/Reports";
 import WorkOrders from "./pages/WorkOrders";
 import SettingsPage from "./pages/SettingsPage";
@@ -42,9 +47,14 @@ const App = () => (
               <Route path="/voice-input" element={<VoiceInput />} />
               <Route path="/invoice-preview" element={<InvoicePreview />} />
               <Route path="/invoice-history" element={<InvoiceHistory />} />
+              <Route path="/invoices" element={<Invoices />} />
               <Route path="/clients" element={<Clients />} />
               <Route path="/clients/new" element={<ClientForm />} />
               <Route path="/clients/edit/:id" element={<ClientForm />} />
+              <Route path="/users" element={<Users />} />
+              <Route path="/roles" element={<Roles />} />
+              <Route path="/roles/:id/permissions" element={<RolePermissions />} />
+              <Route path="/permissions" element={<Permissions />} />
               <Route path="/reports" element={<Reports />} />
               <Route path="/work-orders" element={<WorkOrders />} />
               <Route path="/settings" element={<SettingsPage />} />

@@ -1,38 +1,53 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Eye, EyeOff, Mail, Lock, User, Mic } from "lucide-react";
+import { Mail, Lock, User, Mic } from "lucide-react";
+import { useForm } from "react-hook-form";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { TextField, PasswordField } from "@/components/form/FormFields";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 
+interface LoginFormData {
+  email: string;
+  password: string;
+  firstName?: string;
+  lastName?: string;
+  confirmPassword?: string;
+}
+
 const LoginPage = () => {
   const [isLogin, setIsLogin] = useState(true);
-  const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, register } = useAuth();
+  const { login, register: registerUser } = useAuth();
 
-  // Form states
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  const {
+    register,
+    handleSubmit,
+    watch,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<LoginFormData>({
+    defaultValues: {
+      email: "",
+      password: "",
+      firstName: "",
+      lastName: "",
+      confirmPassword: "",
+    },
+  });
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
+  const password = watch("password");
 
+  const onSubmit = async (data: LoginFormData) => {
     try {
       if (isLogin) {
-        await login(email, password);
+        await login(data.email, data.password);
       } else {
-        if (password !== confirmPassword) {
+        if (data.password !== data.confirmPassword) {
           throw new Error("Passwords do not match");
         }
-        await register(email, password, firstName, lastName);
+        await registerUser(data.email, data.password, data.firstName || "", data.lastName || "");
       }
       
       // Navigate to the page user tried to access or dashboard
@@ -40,9 +55,12 @@ const LoginPage = () => {
       navigate(from, { replace: true });
     } catch (error) {
       console.error("Authentication error:", error);
-    } finally {
-      setIsLoading(false);
     }
+  };
+
+  const handleToggleMode = () => {
+    setIsLogin(!isLogin);
+    reset();
   };
 
   return (
@@ -144,7 +162,8 @@ const LoginPage = () => {
           {/* Toggle Tabs */}
           <div className="flex gap-2 mb-8 p-1 bg-secondary rounded-xl">
             <button
-              onClick={() => setIsLogin(true)}
+              type="button"
+              onClick={() => { setIsLogin(true); handleToggleMode(); }}
               className={`flex-1 py-3 px-4 rounded-lg font-semibold transition-all duration-200 ${
                 isLogin 
                   ? "bg-card text-foreground shadow-md" 
@@ -154,7 +173,8 @@ const LoginPage = () => {
               Login
             </button>
             <button
-              onClick={() => setIsLogin(false)}
+              type="button"
+              onClick={() => { setIsLogin(false); handleToggleMode(); }}
               className={`flex-1 py-3 px-4 rounded-lg font-semibold transition-all duration-200 ${
                 !isLogin 
                   ? "bg-card text-foreground shadow-md" 
@@ -165,77 +185,63 @@ const LoginPage = () => {
             </button>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             {!isLogin && (
-              <>
-                <div className="relative">
-                  <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                  <Input 
-                    type="text" 
-                    placeholder="First Name" 
-                    className="pl-12"
-                    value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="relative">
-                  <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                  <Input 
-                    type="text" 
-                    placeholder="Last Name" 
-                    className="pl-12"
-                    value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
-                    required
-                  />
-                </div>
-              </>
-            )}
-            
-            <div className="relative">
-              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-              <Input 
-                type="email" 
-                placeholder="Email Address" 
-                className="pl-12"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </div>
-            
-            <div className="relative">
-              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-              <Input 
-                type={showPassword ? "text" : "password"} 
-                placeholder="Password" 
-                className="pl-12 pr-12"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-              >
-                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-              </button>
-            </div>
-
-            {!isLogin && (
-              <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                <Input 
-                  type="password" 
-                  placeholder="Confirm Password" 
-                  className="pl-12"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
+              <div className="grid grid-cols-2 gap-4">
+                <TextField
+                  name="firstName"
+                  label=""
+                  register={register}
+                  error={errors.firstName}
+                  required={!isLogin}
+                  placeholder="First Name"
+                  icon={<User className="w-4 h-4" />}
+                />
+                <TextField
+                  name="lastName"
+                  label=""
+                  register={register}
+                  error={errors.lastName}
+                  required={!isLogin}
+                  placeholder="Last Name"
+                  icon={<User className="w-4 h-4" />}
                 />
               </div>
+            )}
+            
+            <TextField
+              name="email"
+              label=""
+              type="email"
+              register={register}
+              error={errors.email}
+              required
+              placeholder="Email Address"
+              autoComplete="email"
+              icon={<Mail className="w-4 h-4" />}
+            />
+            
+            <PasswordField
+              name="password"
+              label=""
+              register={register}
+              error={errors.password}
+              required
+              placeholder="Password"
+              autoComplete={isLogin ? "current-password" : "new-password"}
+              showStrengthIndicator={!isLogin}
+            />
+
+            {!isLogin && (
+              <PasswordField
+                name="confirmPassword"
+                label=""
+                register={register}
+                error={errors.confirmPassword}
+                required
+                placeholder="Confirm Password"
+                autoComplete="new-password"
+              />
             )}
 
             {isLogin && (
@@ -250,8 +256,8 @@ const LoginPage = () => {
               </div>
             )}
 
-            <Button type="submit" variant="accent" size="lg" className="w-full" disabled={isLoading}>
-              {isLoading ? "Please wait..." : (isLogin ? "Login" : "Create Account")}
+            <Button type="submit" variant="accent" size="lg" className="w-full" disabled={isSubmitting}>
+              {isSubmitting ? "Please wait..." : (isLogin ? "Login" : "Create Account")}
             </Button>
           </form>
 

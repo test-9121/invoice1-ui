@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { 
   Download, 
@@ -11,65 +11,122 @@ import {
   Mail,
   Phone,
   MapPin,
-  Pen
+  Pen,
+  CheckCircle2,
+  Loader2,
+  ArrowLeft
 } from "lucide-react";
 import Header from "@/components/Header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
+import { invoiceService } from "@/services/invoice.service";
+import { useToast } from "@/hooks/use-toast";
+import type { InvoiceFormData } from "@/types/invoice";
+import type { Client } from "@/types/client";
 
 const InvoicePreview = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { toast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
+  const [isFinalizing, setIsFinalizing] = useState(false);
 
-  const invoiceData = {
-    id: "INV-0042",
-    date: "December 9, 2024",
-    dueDate: "December 24, 2024",
-    company: {
-      name: "Your Company Name",
-      address: "123 Business Street, Mumbai, MH 400001",
-      email: "contact@yourcompany.com",
-      phone: "+91 98765 43210",
-      gst: "27AABCU9603R1ZM"
-    },
-    client: {
-      name: "ABC Pvt Ltd",
-      address: "456 Client Avenue, Bangalore, KA 560001",
-      email: "accounts@abcpvtltd.com",
-      phone: "+91 87654 32109",
-      gst: "29AABCU9603R1ZM"
-    },
-    items: [
-      { name: "Web Design Services", description: "Complete website redesign with responsive layout", qty: 1, rate: 25000, tax: 18, total: 29500 }
-    ],
-    subtotal: 25000,
-    taxAmount: 4500,
-    total: 29500,
-    notes: "Thank you for your business. Payment is due within 15 days."
+  // Get data from navigation state
+  const passedInvoiceData = location.state?.invoiceData as InvoiceFormData | undefined;
+  const passedClient = location.state?.selectedClient as Client | undefined;
+
+  // Redirect if no data
+  useEffect(() => {
+    if (!passedInvoiceData) {
+      toast({
+        title: "No Invoice Data",
+        description: "Please create an invoice first.",
+        variant: "destructive",
+      });
+      navigate("/voice-input");
+    }
+  }, [passedInvoiceData, navigate, toast]);
+
+  // Calculate totals
+  const subtotal = passedInvoiceData?.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0) || 0;
+  const discountAmount = (subtotal * (passedInvoiceData?.discount || 0)) / 100;
+  const taxableAmount = subtotal - discountAmount;
+  const taxAmount = (taxableAmount * (passedInvoiceData?.taxPercent || 0)) / 100;
+  const total = taxableAmount + taxAmount;
+
+  // Company info (this should come from settings/profile in a real app)
+  const companyInfo = {
+    name: "Your Company Name",
+    address: "123 Business Street, Mumbai, MH 400001",
+    email: "contact@yourcompany.com",
+    phone: "+91 98765 43210",
+    gst: "27AABCU9603R1ZM"
   };
 
-  const voiceCommands = [
-    "Add item",
-    "Change quantity",
-    "Update rate",
-    "Apply discount",
-    "Change client",
-    "Save invoice"
-  ];
+  // Handle finalize invoice
+  const handleFinalizeInvoice = async () => {
+    if (!passedInvoiceData) return;
+
+    setIsFinalizing(true);
+    try {
+      const response = await invoiceService.createInvoice(passedInvoiceData);
+
+      if (response.success) {
+        toast({
+          title: "Success!",
+          description: "Invoice has been finalized and created successfully.",
+        });
+        
+        // Navigate to invoices list or dashboard
+        navigate("/work-orders"); // or wherever you want to redirect
+      } else {
+        throw new Error(response.message || 'Failed to create invoice');
+      }
+    } catch (error: any) {
+      console.error('[InvoicePreview] Error finalizing invoice:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to finalize invoice. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsFinalizing(false);
+    }
+  };
+
+  if (!passedInvoiceData) {
+    return null; // Will redirect in useEffect
+  }
+
+  console.log('=== InvoicePreview Debug ===');
+  console.log('Passed Invoice Data:', passedInvoiceData);
+  console.log('Invoice clientId:', passedInvoiceData.clientId, 'Type:', typeof passedInvoiceData.clientId);
+  console.log('Passed Client:', passedClient);
+  console.log('Client ID:', passedClient?.id, 'Type:', typeof passedClient?.id);
+  console.log('=========================');
 
   return (
     <div className="min-h-screen pb-8">
-      <Header title="Invoice Preview" subtitle={`Invoice ${invoiceData.id}`} />
+      <Header title="Invoice Preview" subtitle="Review your invoice before finalizing" />
       
       <div className="p-6">
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        {/* Back Button */}
+        <Button
+          variant="ghost"
+          onClick={() => navigate(-1)}
+          className="mb-4"
+        >
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Back to Edit
+        </Button>
+
+        <div className="grid grid-cols-1 gap-6">
           {/* Invoice Preview */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
-            className="xl:col-span-2"
           >
             <div className="card-elevated p-8 bg-card">
               {/* Invoice Header */}
@@ -78,23 +135,30 @@ const InvoicePreview = () => {
                   <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary to-navy-light flex items-center justify-center mb-4">
                     <Building2 className="w-8 h-8 text-primary-foreground" />
                   </div>
-                  <h2 className="text-xl font-bold text-foreground">{invoiceData.company.name}</h2>
-                  <p className="text-sm text-muted-foreground mt-1">{invoiceData.company.address}</p>
+                  <h2 className="text-xl font-bold text-foreground">{companyInfo.name}</h2>
+                  <p className="text-sm text-muted-foreground mt-1">{companyInfo.address}</p>
                   <div className="flex flex-col gap-1 mt-2 text-sm text-muted-foreground">
                     <span className="flex items-center gap-2">
-                      <Mail className="w-4 h-4" /> {invoiceData.company.email}
+                      <Mail className="w-4 h-4" /> {companyInfo.email}
                     </span>
                     <span className="flex items-center gap-2">
-                      <Phone className="w-4 h-4" /> {invoiceData.company.phone}
+                      <Phone className="w-4 h-4" /> {companyInfo.phone}
                     </span>
                   </div>
+                  <p className="text-xs text-muted-foreground mt-2">GST: {companyInfo.gst}</p>
                 </div>
                 <div className="text-right">
                   <h1 className="text-3xl font-bold text-accent mb-2">INVOICE</h1>
-                  <p className="text-lg font-semibold text-foreground">{invoiceData.id}</p>
+                  <p className="text-lg font-semibold text-foreground">DRAFT</p>
                   <div className="mt-4 space-y-1 text-sm">
-                    <p className="text-muted-foreground">Date: <span className="text-foreground">{invoiceData.date}</span></p>
-                    <p className="text-muted-foreground">Due Date: <span className="text-foreground">{invoiceData.dueDate}</span></p>
+                    <p className="text-muted-foreground">
+                      Issue Date: <span className="text-foreground">{passedInvoiceData.issuedDate}</span>
+                    </p>
+                    {passedInvoiceData.dueDate && (
+                      <p className="text-muted-foreground">
+                        Due Date: <span className="text-foreground">{passedInvoiceData.dueDate}</span>
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -102,19 +166,35 @@ const InvoicePreview = () => {
               {/* Bill To */}
               <div className="mb-8 p-4 rounded-xl bg-secondary/50">
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Bill To</p>
-                <h3 className="text-lg font-semibold text-foreground">{invoiceData.client.name}</h3>
-                <p className="text-sm text-muted-foreground flex items-center gap-2 mt-1">
-                  <MapPin className="w-4 h-4" /> {invoiceData.client.address}
-                </p>
-                <div className="flex flex-wrap gap-4 mt-2 text-sm text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <Mail className="w-4 h-4" /> {invoiceData.client.email}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Phone className="w-4 h-4" /> {invoiceData.client.phone}
-                  </span>
-                </div>
-                <p className="text-sm text-muted-foreground mt-2">GST: {invoiceData.client.gst}</p>
+                <h3 className="text-lg font-semibold text-foreground">
+                  {passedClient?.name || 'Client Name'}
+                </h3>
+                {passedClient?.company && (
+                  <p className="text-sm text-muted-foreground">{passedClient.company}</p>
+                )}
+                {passedClient && (
+                  <div className="flex flex-col gap-1 mt-2 text-sm text-muted-foreground">
+                    {passedClient.email && (
+                      <span className="flex items-center gap-2">
+                        <Mail className="w-4 h-4" /> {passedClient.email}
+                      </span>
+                    )}
+                    {passedClient.mobile && (
+                      <span className="flex items-center gap-2">
+                        <Phone className="w-4 h-4" /> {passedClient.mobile}
+                      </span>
+                    )}
+                    {passedClient.billingAddressLine1 && (
+                      <span className="flex items-center gap-2">
+                        <MapPin className="w-4 h-4" /> 
+                        {passedClient.billingAddressLine1}, {passedClient.city}, {passedClient.state} {passedClient.postalCode}
+                      </span>
+                    )}
+                    {passedClient.gstNumber && (
+                      <p className="text-xs mt-1">GST: {passedClient.gstNumber}</p>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Items Table */}
@@ -123,22 +203,20 @@ const InvoicePreview = () => {
                   <thead>
                     <tr className="bg-primary text-primary-foreground">
                       <th className="text-left py-3 px-4 rounded-l-lg font-medium">Item</th>
-                      <th className="text-left py-3 px-4 font-medium hidden sm:table-cell">Description</th>
                       <th className="text-center py-3 px-4 font-medium">Qty</th>
                       <th className="text-right py-3 px-4 font-medium">Rate</th>
-                      <th className="text-center py-3 px-4 font-medium">Tax</th>
-                      <th className="text-right py-3 px-4 rounded-r-lg font-medium">Total</th>
+                      <th className="text-right py-3 px-4 rounded-r-lg font-medium">Amount</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {invoiceData.items.map((item, index) => (
+                    {passedInvoiceData.items.map((item, index) => (
                       <tr key={index} className="border-b border-border">
                         <td className="py-4 px-4 font-medium text-foreground">{item.name}</td>
-                        <td className="py-4 px-4 text-sm text-muted-foreground hidden sm:table-cell">{item.description}</td>
-                        <td className="py-4 px-4 text-center text-foreground">{item.qty}</td>
-                        <td className="py-4 px-4 text-right text-foreground">₹{item.rate.toLocaleString()}</td>
-                        <td className="py-4 px-4 text-center text-foreground">{item.tax}%</td>
-                        <td className="py-4 px-4 text-right font-semibold text-foreground">₹{item.total.toLocaleString()}</td>
+                        <td className="py-4 px-4 text-center text-foreground">{item.quantity}</td>
+                        <td className="py-4 px-4 text-right text-foreground">₹{item.unitPrice.toLocaleString()}</td>
+                        <td className="py-4 px-4 text-right font-semibold text-foreground">
+                          ₹{(item.quantity * item.unitPrice).toLocaleString()}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -150,105 +228,62 @@ const InvoicePreview = () => {
                 <div className="w-full sm:w-64 space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Subtotal</span>
-                    <span className="text-foreground">₹{invoiceData.subtotal.toLocaleString()}</span>
+                    <span className="text-foreground">₹{subtotal.toLocaleString()}</span>
                   </div>
+                  {passedInvoiceData.discount > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Discount ({passedInvoiceData.discount}%)</span>
+                      <span className="text-red-600">-₹{discountAmount.toLocaleString()}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">GST (18%)</span>
-                    <span className="text-foreground">₹{invoiceData.taxAmount.toLocaleString()}</span>
+                    <span className="text-muted-foreground">GST ({passedInvoiceData.taxPercent}%)</span>
+                    <span className="text-foreground">₹{taxAmount.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between pt-2 border-t border-border">
                     <span className="text-lg font-semibold text-foreground">Total</span>
-                    <span className="text-lg font-bold text-accent">₹{invoiceData.total.toLocaleString()}</span>
+                    <span className="text-lg font-bold text-accent">₹{total.toLocaleString()}</span>
                   </div>
                 </div>
               </div>
 
-              {/* Signature */}
-              <div className="flex flex-col sm:flex-row justify-between items-start gap-6 pt-6 border-t border-border">
-                <div className="flex-1">
+              {/* Notes */}
+              {passedInvoiceData.notes && (
+                <div className="pt-6 border-t border-border">
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Notes</p>
-                  <p className="text-sm text-muted-foreground">{invoiceData.notes}</p>
+                  <p className="text-sm text-muted-foreground">{passedInvoiceData.notes}</p>
                 </div>
-                <div className="text-center">
-                  <div className="w-48 h-16 border-b-2 border-border mb-2 flex items-end justify-center pb-1">
-                    <Pen className="w-5 h-5 text-muted-foreground" />
-                  </div>
-                  <p className="text-xs text-muted-foreground">Authorized Signature</p>
-                </div>
-              </div>
-            </div>
-          </motion.div>
+              )}
 
-          {/* Right Panel */}
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.5, delay: 0.2 }}
-            className="space-y-6"
-          >
-            {/* Voice Commands */}
-            <div className="card-elevated p-6">
-              <div className="flex items-center gap-2 mb-4">
-                <Mic className="w-5 h-5 text-accent" />
-                <h3 className="font-semibold text-foreground">Voice Commands</h3>
-              </div>
-              <div className="space-y-2">
-                {voiceCommands.map((cmd) => (
-                  <button
-                    key={cmd}
-                    className="w-full px-4 py-2.5 rounded-xl bg-secondary/50 hover:bg-secondary text-sm text-left text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    "{cmd}"
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Quick Edit */}
-            <div className="card-elevated p-6">
-              <h3 className="font-semibold text-foreground mb-4">Quick Edit</h3>
-              <div className="space-y-4">
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Client Name</label>
-                  <Input defaultValue={invoiceData.client.name} className="mt-1" />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Due Date</label>
-                  <Input type="date" defaultValue="2024-12-24" className="mt-1" />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Notes</label>
-                  <textarea 
-                    className="mt-1 w-full h-20 px-4 py-2 rounded-xl border-2 border-input bg-background text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
-                    defaultValue={invoiceData.notes}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="space-y-3">
-              <Button variant="accent" size="lg" className="w-full">
-                <Save className="w-5 h-5 mr-2" />
-                Finalize Invoice
-              </Button>
-              <Button variant="outline-navy" size="lg" className="w-full">
-                <FileText className="w-5 h-5 mr-2" />
-                Generate Work Order
-              </Button>
-              <div className="grid grid-cols-2 gap-3">
-                <Button variant="outline" size="lg">
-                  <Download className="w-5 h-5 mr-2" />
-                  PDF
+              {/* Action Buttons */}
+              <div className="flex gap-3 mt-8 pt-6 border-t border-border">
+                <Button
+                  variant="outline"
+                  onClick={() => navigate(-1)}
+                  disabled={isFinalizing}
+                >
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  Edit Invoice
                 </Button>
-                <Button variant="outline" size="lg">
-                  <Share2 className="w-5 h-5 mr-2" />
-                  Share
+                <Button
+                  variant="accent"
+                  className="flex-1"
+                  onClick={handleFinalizeInvoice}
+                  disabled={isFinalizing}
+                >
+                  {isFinalizing ? (
+                    <>
+                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                      Finalizing...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-5 h-5 mr-2" />
+                      Finalize Invoice
+                    </>
+                  )}
                 </Button>
               </div>
-              <Button variant="ghost" size="lg" className="w-full text-muted-foreground">
-                Save as Draft
-              </Button>
             </div>
           </motion.div>
         </div>
