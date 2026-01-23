@@ -42,7 +42,7 @@ const Permissions = () => {
   const [currentPage, setCurrentPage] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
   const [totalElements, setTotalElements] = useState(0);
-  const [pageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(10);
 
   // Fetch permissions
   const fetchPermissions = async () => {
@@ -85,21 +85,12 @@ const Permissions = () => {
   };
 
   useEffect(() => {
-    fetchPermissions();
-  }, [currentPage, categoryFilter]);
-
-  // Search handler with debounce
-  useEffect(() => {
     const timer = setTimeout(() => {
-      if (currentPage === 0) {
-        fetchPermissions();
-      } else {
-        setCurrentPage(0);
-      }
-    }, 500);
+      fetchPermissions();
+    }, 300);
 
     return () => clearTimeout(timer);
-  }, [searchQuery]);
+  }, [currentPage, categoryFilter, pageSize, searchQuery]);
 
   // Get unique categories
   const categories = ["ALL", ...new Set(permissions.map(p => p.category || "Other"))];
@@ -197,7 +188,7 @@ const Permissions = () => {
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder="Search permissions by name or description..."
+                placeholder="Search permissions by module, action or description..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9"
@@ -205,7 +196,7 @@ const Permissions = () => {
             </div>
 
             {/* Category Filter */}
-            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+            {/* <Select value={categoryFilter} onValueChange={setCategoryFilter}>
               <SelectTrigger className="w-full md:w-[200px]">
                 <SelectValue placeholder="Filter by category" />
               </SelectTrigger>
@@ -216,7 +207,7 @@ const Permissions = () => {
                   </SelectItem>
                 ))}
               </SelectContent>
-            </Select>
+            </Select> */}
 
             {/* Refresh Button */}
             <Button variant="outline" onClick={fetchPermissions} disabled={loading}>
@@ -237,9 +228,8 @@ const Permissions = () => {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[300px]">Permission</TableHead>
+                  <TableHead className="w-[300px]">Permission[module:action]</TableHead>
                   <TableHead className="w-[400px]">Description</TableHead>
-                  <TableHead>Category</TableHead>
                   <TableHead>Created</TableHead>
                   <TableHead>Updated</TableHead>
                 </TableRow>
@@ -274,7 +264,7 @@ const Permissions = () => {
                           </div>
                           <div className="min-w-0">
                             <p className="font-medium text-foreground truncate">
-                              {permission.name}
+                              {permission.module}: {permission.action}
                             </p>
                             <p className="text-xs text-muted-foreground font-mono">
                               {permission.id.slice(0, 8)}...
@@ -287,17 +277,18 @@ const Permissions = () => {
                           {permission.description}
                         </p>
                       </TableCell>
-                      <TableCell>
+                      {/* <TableCell>
                         <Badge 
                           variant="outline" 
                           className={`${getCategoryColor(permission.category)} border`}
                         >
                           {permission.category || "Other"}
                         </Badge>
-                      </TableCell>
+                      </TableCell> */}
                       <TableCell>
                         <p className="text-sm text-muted-foreground whitespace-nowrap">
-                          {formatDate(permission.createdAt)}
+                          {/* {formatDate(permission.createdAt)} */}
+                          {permission.createdAt ? formatDate(permission.createdAt) : "N/A"}
                         </p>
                       </TableCell>
                       <TableCell>
@@ -313,11 +304,33 @@ const Permissions = () => {
           </div>
 
           {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between px-4 py-3 border-t">
-              <p className="text-sm text-muted-foreground">
-                Showing {currentPage * pageSize + 1} to {Math.min((currentPage + 1) * pageSize, totalElements)} of {totalElements} permissions
-              </p>
+          {totalPages > 0 && (
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 px-4 py-3 border-t">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                <p className="text-sm text-muted-foreground">
+                  Showing {currentPage * pageSize + 1} to {Math.min((currentPage + 1) * pageSize, totalElements)} of {totalElements} permissions
+                </p>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">Rows per page:</span>
+                  <Select
+                    value={pageSize.toString()}
+                    onValueChange={(value) => {
+                      setPageSize(Number(value));
+                      setCurrentPage(0);
+                    }}
+                  >
+                    <SelectTrigger className="w-[70px] h-8">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="5">5</SelectItem>
+                      <SelectItem value="10">10</SelectItem>
+                      <SelectItem value="20">20</SelectItem>
+                      <SelectItem value="50">50</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
               <div className="flex gap-2">
                 <Button
                   variant="outline"
@@ -327,11 +340,6 @@ const Permissions = () => {
                 >
                   Previous
                 </Button>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">
-                    Page {currentPage + 1} of {totalPages}
-                  </span>
-                </div>
                 <Button
                   variant="outline"
                   size="sm"

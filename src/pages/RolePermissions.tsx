@@ -76,7 +76,9 @@ const RolePermissions = () => {
         const permissionsData = Array.isArray(response.data) 
           ? response.data 
           : response.data.content || [];
-        setAllPermissions(permissionsData);
+        // Filter out any invalid permissions
+        const validPermissions = permissionsData.filter(p => p && p.id && p.name);
+        setAllPermissions(validPermissions);
       }
     } catch (error: any) {
       toast({
@@ -152,12 +154,12 @@ const RolePermissions = () => {
   };
 
   // Get unique categories
-  const categories = ["ALL", ...new Set(allPermissions.map(p => p.category || "Other"))];
+  const categories = ["ALL", ...new Set(allPermissions.map(p => p?.category || "Other"))];
 
   // Filter permissions
   const filteredPermissions = allPermissions.filter(permission => {
-    const matchesSearch = permission.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         permission.description.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = (permission.name?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
+                         (permission.description?.toLowerCase() || '').includes(searchQuery.toLowerCase());
     const matchesCategory = categoryFilter === "ALL" || 
                            (permission.category || "Other") === categoryFilter;
     return matchesSearch && matchesCategory;

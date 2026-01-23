@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { Loader2, User as UserIcon, Mail, Phone } from "lucide-react";
 import {
   Dialog,
@@ -12,8 +12,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { ForeignKeyField, useForeignKeyField } from "@/components/ui/foreign-key-field";
 import { useToast } from "@/hooks/use-toast";
 import { userService } from "@/services/user.service";
+import { roleService } from "@/services/role.service";
 import type { User, CreateUserRequest, UpdateUserRequest, AccountStatus } from "@/types/user";
 import { PasswordField } from "@/components/form/FormFields";
 
@@ -43,8 +45,31 @@ const UserFormDialog = ({ open, onOpenChange, user, onSuccess }: UserFormDialogP
 
   const isEditing = !!user;
 
+  // Fetch roles with the custom hook
+  const { options: roleOptions, loading: rolesLoading } = useForeignKeyField({
+    fetchOptions: async () => {
+      try {
+        const response = await roleService.getRoles({ page: 0, size: 100 });
+        if (response.success) {
+          const rolesData: any = Array.isArray(response.data) ? response.data : response.data?.content || [];
+          return rolesData;
+        }
+        return [];
+      } catch (error) {
+        console.error('Error fetching roles:', error);
+        return [];
+      }
+    },
+    mapOption: (role: any) => ({
+      id: role.id,
+      label: role.name,
+      description: role.description || '',
+    }),
+  });
+
   const {
     register,
+    control,
     handleSubmit,
     reset,
     watch,
@@ -188,7 +213,7 @@ const UserFormDialog = ({ open, onOpenChange, user, onSuccess }: UserFormDialogP
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+  <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEditing ? 'Edit User' : 'Create New User'}</DialogTitle>
           <DialogDescription>
@@ -287,8 +312,33 @@ const UserFormDialog = ({ open, onOpenChange, user, onSuccess }: UserFormDialogP
             )}
           </div>
 
-          {/* Role - Hidden for now, using default */}
-          <input type="hidden" {...register("roles")} value="USER" />
+          {/* Role Selection */}
+          <div className="space-y-2">
+            <Label htmlFor="roles">Roles *</Label>
+            <Controller
+              name="roles"
+              control={control}
+              rules={{ required: "At least one role is required" }}
+              render={({ field }) => (
+                <div>
+                  <ForeignKeyField
+                    value={field.value}
+                    onChange={field.onChange}
+                    options={roleOptions}
+                    loading={rolesLoading}
+                    multiple
+                    maxDisplayCount={3}
+                    placeholder="Select roles..."
+                    searchPlaceholder="Search roles..."
+                    disabled={loading}
+                  />
+                  {errors.roles && (
+                    <p className="text-sm text-red-600 mt-1">{errors.roles.message}</p>
+                  )}
+                </div>
+              )}
+            />
+          </div>
 
           {/* Password */}
           <div className="space-y-2">

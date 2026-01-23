@@ -63,6 +63,16 @@ const LoginPage = () => {
     reset();
   };
 
+  const handleGoogleLogin = () => {
+    // Redirect to backend OAuth2 endpoint for Google authentication
+    window.location.href = 'http://localhost:8080/oauth2/authorization/google';
+  };
+
+  const handleMicrosoftLogin = () => {
+    // Redirect to backend OAuth2 endpoint for Microsoft authentication
+    window.location.href = 'http://localhost:8080/oauth2/authorization/microsoft';
+  };
+
   return (
     <div className="min-h-screen flex">
       {/* Left Side - Branding */}
@@ -190,7 +200,7 @@ const LoginPage = () => {
               <div className="grid grid-cols-2 gap-4">
                 <TextField
                   name="firstName"
-                  label=""
+                  label="First Name"
                   register={register}
                   error={errors.firstName}
                   required={!isLogin}
@@ -199,7 +209,7 @@ const LoginPage = () => {
                 />
                 <TextField
                   name="lastName"
-                  label=""
+                  label="Last Name"
                   register={register}
                   error={errors.lastName}
                   required={!isLogin}
@@ -211,7 +221,7 @@ const LoginPage = () => {
             
             <TextField
               name="email"
-              label=""
+              label="Email Address"
               type="email"
               register={register}
               error={errors.email}
@@ -223,7 +233,7 @@ const LoginPage = () => {
             
             <PasswordField
               name="password"
-              label=""
+              label="Password"
               register={register}
               error={errors.password}
               required
@@ -235,7 +245,7 @@ const LoginPage = () => {
             {!isLogin && (
               <PasswordField
                 name="confirmPassword"
-                label=""
+                label="Confirm Password"
                 register={register}
                 error={errors.confirmPassword}
                 required
@@ -272,7 +282,13 @@ const LoginPage = () => {
             </div>
 
             <div className="mt-6 grid grid-cols-2 gap-4">
-              <Button variant="social" size="lg" className="w-full">
+              <Button 
+                variant="social" 
+                size="lg" 
+                className="w-full"
+                type="button"
+                onClick={handleGoogleLogin}
+              >
                 <svg className="w-5 h-5" viewBox="0 0 24 24">
                   <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
                   <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -281,7 +297,13 @@ const LoginPage = () => {
                 </svg>
                 Google
               </Button>
-              <Button variant="social" size="lg" className="w-full">
+              <Button 
+                variant="social" 
+                size="lg" 
+                className="w-full"
+                type="button"
+                onClick={handleMicrosoftLogin}
+              >
                 <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M11.4 24H0V12.6h11.4V24zM24 24H12.6V12.6H24V24zM11.4 11.4H0V0h11.4v11.4zM24 11.4H12.6V0H24v11.4z"/>
                 </svg>

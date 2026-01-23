@@ -63,6 +63,7 @@ const Invoices = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<InvoiceStatus | 'ALL'>('ALL');
   const [currentPage, setCurrentPage] = useState(0);
+  const [pageSize, setPageSize] = useState(20);
   const [totalPages, setTotalPages] = useState(0);
   const [totalElements, setTotalElements] = useState(0);
 
@@ -72,7 +73,7 @@ const Invoices = () => {
     try {
       const params: any = {
         page: currentPage,
-        size: 20,
+        size: pageSize,
         search: searchQuery || undefined,
         status: statusFilter !== 'ALL' ? statusFilter : undefined,
       };
@@ -98,21 +99,12 @@ const Invoices = () => {
   };
 
   useEffect(() => {
-    fetchInvoices();
-  }, [currentPage, statusFilter]);
-
-  // Search handler with debounce
-  useEffect(() => {
     const timer = setTimeout(() => {
-      if (currentPage === 0) {
-        fetchInvoices();
-      } else {
-        setCurrentPage(0);
-      }
-    }, 500);
+      fetchInvoices();
+    }, 300);
 
     return () => clearTimeout(timer);
-  }, [searchQuery]);
+  }, [currentPage, statusFilter, pageSize, searchQuery]);
 
   // Get status badge styling
   const getStatusBadge = (status: InvoiceStatus) => {
@@ -218,7 +210,7 @@ const Invoices = () => {
 
       <div className="p-6 space-y-6">
         {/* Statistics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {statsCards.map((stat, index) => (
             <motion.div
               key={stat.title}
@@ -390,12 +382,34 @@ const Invoices = () => {
             </div>
 
             {/* Pagination */}
-            {!isLoading && invoices.length > 0 && (
-              <div className="flex items-center justify-between mt-6">
-                <p className="text-sm text-muted-foreground">
-                  Showing {currentPage * 20 + 1} to {Math.min((currentPage + 1) * 20, totalElements)} of{' '}
-                  {totalElements} invoices
-                </p>
+            {!isLoading && totalPages > 0 && (
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mt-6">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                  <p className="text-sm text-muted-foreground">
+                    Showing {currentPage * pageSize + 1} to {Math.min((currentPage + 1) * pageSize, totalElements)} of{' '}
+                    {totalElements} invoices
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">Rows per page:</span>
+                    <Select
+                      value={pageSize.toString()}
+                      onValueChange={(value) => {
+                        setPageSize(Number(value));
+                        setCurrentPage(0);
+                      }}
+                    >
+                      <SelectTrigger className="w-[70px] h-8">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="5">5</SelectItem>
+                        <SelectItem value="10">10</SelectItem>
+                        <SelectItem value="20">20</SelectItem>
+                        <SelectItem value="50">50</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
                 <div className="flex gap-2">
                   <Button
                     variant="outline"

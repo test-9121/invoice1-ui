@@ -25,7 +25,7 @@ const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
   { icon: Mic, label: "Create Invoice", path: "/voice-input" },
   { icon: Receipt, label: "Invoices", path: "/invoices" },
-  { icon: FileText, label: "Work Orders", path: "/work-orders" },
+  // { icon: FileText, label: "Work Orders", path: "/work-orders" },
   { icon: Users, label: "Clients", path: "/clients" },
   { icon: UserCog, label: "Users", path: "/users" },
   { icon: Shield, label: "Roles", path: "/roles" },

@@ -123,7 +123,45 @@ export class RoleService {
       throw error;
     }
   }
+
+  async getRolePermissions(roleId: string): Promise<{ success: boolean; data: Permission[]; message: string }> {
+    try {
+      const response = await apiClient.get<{ success: boolean; data: Permission[]; message: string }>(`${this.basePath}/${roleId}/permissions`, true);
+      return response;
+    } catch (error: any) {
+      console.error('[RoleService] Error fetching role permissions:', error);
+      throw error;
+    }
+  }
+
+
+  async addPermissionsToRole(roleId: string, permissionIds: string[]): Promise<{ success: boolean; data: any; message: string }> {
+    try {
+      const response = await apiClient.post<{ success: boolean; data: any; message: string }>(
+        `${this.basePath}/${roleId}/permissions/bulk`,
+        permissionIds,
+        true
+      );
+      return response;
+    } catch (error: any) {
+      console.error('[RoleService] Error adding permissions to role:', error);
+      throw error;
+    }
+  }
+
+  async removePermissionFromRole(roleId: string, permissionId: string): Promise<{ success: boolean; data: any; message: string }> {
+    try {
+      const response = await apiClient.delete<{ success: boolean; data: any; message: string }>(
+        `${this.basePath}/${roleId}/permissions/${permissionId}`,
+        true
+      );
+      return response;
+    } catch (error: any) {
+      console.error('[RoleService] Error removing permission from role:', error);
+      throw error;
+    }
+  }
 }
 
-// Export singleton instance
+
 export const roleService = new RoleService();

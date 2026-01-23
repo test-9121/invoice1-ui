@@ -1,6 +1,7 @@
 import { Bell, Mic, Search, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 interface HeaderProps {
   title: string;
@@ -8,6 +9,12 @@ interface HeaderProps {
 }
 
 const Header = ({ title, subtitle }: HeaderProps) => {
+  const { user, loading } = useCurrentUser();
+  const displayName = user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email : 'Guest';
+  const displayRole = user && user.roles && user.roles.length > 0
+    ? (typeof user.roles[0] === 'string' ? user.roles[0] : user.roles[0]?.name)
+    : '';
+
   return (
     <header className="h-20 bg-card border-b border-border flex items-center justify-between px-6 sticky top-0 z-40">
       <div>
@@ -42,8 +49,12 @@ const Header = ({ title, subtitle }: HeaderProps) => {
             <User className="w-5 h-5 text-accent-foreground" />
           </div>
           <div className="hidden sm:block text-left">
-            <p className="text-sm font-semibold text-foreground">John Doe</p>
-            <p className="text-xs text-muted-foreground">Admin</p>
+            <p className="text-sm font-semibold text-foreground">
+              {loading ? 'Loading...' : displayName}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {loading ? '' : displayRole}
+            </p>
           </div>
         </button>
       </div>

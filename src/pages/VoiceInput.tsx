@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useForm, useFieldArray } from "react-hook-form";
+import { useForm, useFieldArray, Controller } from "react-hook-form";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Mic, 
@@ -38,6 +38,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ForeignKeyField, useForeignKeyField } from "@/components/ui/foreign-key-field";
 import { useNavigate } from "react-router-dom";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { voiceInvoiceService } from "@/services/voice-invoice.service";
@@ -293,6 +294,9 @@ const VoiceInput = () => {
             unitPrice: item.unitPrice || matchedProduct.salePrice,
             amount: (item.quantity || 1) * (item.unitPrice || matchedProduct.salePrice),
             productId: matchedProduct.id,
+            hsnCode: matchedProduct.hsnProductTax.code,
+            category: matchedProduct.hsnProductTax.category,
+            taxPercentage: matchedProduct.hsnProductTax.taxPercentage,
             productMatches: item.productMatches
           };
         } else if (productMatchesCount > 1) {
@@ -396,6 +400,9 @@ const VoiceInput = () => {
       setValue(`items.${index}.name`, product.name);
       setValue(`items.${index}.unitPrice`, product.salePrice);
       setValue(`items.${index}.productId` as any, product.id);
+      setValue(`items.${index}.hsnCode` as any, product.hsnProductTax.code);
+      setValue(`items.${index}.category` as any, product.hsnProductTax.category);
+      setValue(`items.${index}.taxPercentage` as any, product.hsnProductTax.taxPercentage);
       // Clear product matches after selection
       setValue(`items.${index}.productMatches` as any, null);
     }
@@ -417,6 +424,9 @@ const VoiceInput = () => {
       setValue(`items.${selectedItemIndex}.name`, product.name);
       setValue(`items.${selectedItemIndex}.unitPrice`, product.salePrice);
       setValue(`items.${selectedItemIndex}.productId` as any, product.id);
+      setValue(`items.${selectedItemIndex}.hsnCode` as any, product.hsnProductTax.code);
+      setValue(`items.${selectedItemIndex}.category` as any, product.hsnProductTax.category);
+      setValue(`items.${selectedItemIndex}.taxPercentage` as any, product.hsnProductTax.taxPercentage);
       // Clear product matches after selection
       setValue(`items.${selectedItemIndex}.productMatches` as any, null);
       
@@ -465,13 +475,19 @@ const VoiceInput = () => {
   // Calculate totals
   const items = watch('items');
   const discount = watch('discount');
-  const taxPercent = watch('taxPercent');
 
-  const subtotal = items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
+  // Calculate subtotal with GST included in each item
+  const subtotal = items.reduce((sum, item) => {
+    const quantity = item.quantity || 0;
+    const unitPrice = item.unitPrice || 0;
+    const taxPercentage = item.taxPercentage;
+    const gstRate = taxPercentage ? parseFloat(taxPercentage.replace('%', '')) : 0;
+    const itemAmount = quantity * unitPrice * (1 + gstRate / 100);
+    return sum + itemAmount;
+  }, 0);
+  
   const discountAmount = (subtotal * discount) / 100;
-  const taxableAmount = subtotal - discountAmount;
-  const taxAmount = (taxableAmount * taxPercent) / 100;
-  const total = taxableAmount + taxAmount;
+  const total = subtotal - discountAmount;
 
   return (
     <div className="min-h-screen">
@@ -484,7 +500,7 @@ const VoiceInput = () => {
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5 }}
-            className="card-elevated p-8"
+            className="card-elevated py-6 px-4 sm:px-6 md:px-8 max-h-[90vh] min-h-[200px] h-auto overflow-auto flex flex-col justify-start"
           >
             {/* Mic Button */}
             <div className="flex flex-col items-center mb-8">
@@ -630,7 +646,7 @@ const VoiceInput = () => {
                 <div>
                   <p className="text-sm font-medium text-foreground mb-1">Voice Hint</p>
                   <p className="text-sm text-muted-foreground">
-                    "Create invoice for [Client Name] for [Service] at rate [Amount] with [Tax]% GST"
+                    "Create an invoice for client [Client Name]. Add [Product Name] with quantity [X], and [Product Name] with quantity [Y]. Set the invoice date to [Invoice Date] and the due date to [Due Date].Apply a [Discount]% discount."
                   </p>
                 </div>
               </div>
@@ -727,52 +743,52 @@ const VoiceInput = () => {
                     </Button>
                   )}
                 </div>
-                <Select
-                  value={selectedClient?.id || watch('clientId')?.toString() || ''}
-                  onValueChange={handleClientChange}
-                  disabled={isProcessing || isLoadingClients}
-                >
-                  <SelectTrigger 
-                    className={autoFilledFields.has('clientId') ? 'bg-green-50 border-green-300' : ''}
-                  >
-                    <SelectValue placeholder={isLoadingClients ? "Loading clients..." : "Select a client"}>
-                      {selectedClient ? (
-                        <div className="flex flex-col">
-                          <span className="font-medium">{selectedClient.name}</span>
-                          {selectedClient.company && (
-                            <span className="text-xs text-muted-foreground">{selectedClient.company}</span>
-                          )}
-                        </div>
-                      ) : (
-                        "Select a client"
-                      )}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {clients.map((client) => (
-                      <SelectItem 
-                        key={client.id} 
-                        value={client.id}
-                        className={selectedClient?.id === client.id 
-                          ? 'bg-orange-100 font-semibold hover:bg-orange-50 focus:bg-orange-100' 
-                          : 'hover:bg-orange-50'
-                        }
-                      >
-                        <div className="flex items-center gap-2">
-                          <div className="flex flex-col">
-                            <span className="font-medium">{client.name}</span>
-                            {client.company && (
-                              <span className="text-xs text-muted-foreground">{client.company}</span>
+                <Controller
+                  name="clientId"
+                  control={control}
+                  rules={{ required: "Client is required" }}
+                  render={({ field }) => (
+                    <ForeignKeyField
+                      value={selectedClient?.id || field.value || null}
+                      onChange={(value) => {
+                        field.onChange(value);
+                        handleClientChange(value as string);
+                      }}
+                      options={clients.map(client => ({
+                        id: client.id,
+                        label: client.name,
+                        description: client.company || client.email || client.mobile,
+                        ...client
+                      }))}
+                      placeholder={isLoadingClients ? "Loading clients..." : "Select a client"}
+                      searchPlaceholder="Search clients..."
+                      loading={isLoadingClients}
+                      disabled={isProcessing || isLoadingClients}
+                      className={autoFilledFields.has('clientId') ? 'bg-green-50 border-green-300' : ''}
+                      renderOption={(option) => (
+                        <div className="flex items-center gap-2 w-full overflow-hidden">
+                          <div className="flex flex-col flex-1 overflow-hidden">
+                            <span className="font-medium truncate">{option.label}</span>
+                            {option.description && (
+                              <span className="text-xs text-muted-foreground truncate">{option.description}</span>
                             )}
                           </div>
-                          {selectedClient?.id === client.id && (
-                            <CheckCircle2 className="w-4 h-4 text-orange-600 ml-auto" />
+                          {selectedClient?.id === option.id && (
+                            <CheckCircle2 className="w-4 h-4 text-orange-600 shrink-0" />
                           )}
                         </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                      )}
+                      renderSelected={(option) => (
+                        <div className="flex flex-col overflow-hidden">
+                          <span className="font-medium truncate">{option.label}</span>
+                          {option.description && (
+                            <span className="text-xs text-muted-foreground truncate">{option.description}</span>
+                          )}
+                        </div>
+                      )}
+                    />
+                  )}
+                />
                 {selectedClient && (
                   <p className="text-xs text-muted-foreground">
                     {selectedClient.email && `Email: ${selectedClient.email}`}
@@ -860,35 +876,48 @@ const VoiceInput = () => {
                                   </Badge>
                                 )}
                               </div>
-                              <Select
-                                value={watch(`items.${index}.productId` as any) || ''}
-                                onValueChange={(value) => handleProductSelect(value, index)}
-                                disabled={isProcessing || isLoadingProducts}
-                              >
-                                <SelectTrigger 
-                                  className={autoFilledFields.has('items') ? 'bg-green-50 border-green-300' : ''}
-                                >
-                                  <SelectValue placeholder="Select product or service" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {isLoadingProducts ? (
-                                    <SelectItem value="loading" disabled>Loading products...</SelectItem>
-                                  ) : products.length === 0 ? (
-                                    <SelectItem value="empty" disabled>No products available</SelectItem>
-                                  ) : (
-                                    products.map((product) => (
-                                      <SelectItem key={product.id} value={product.id}>
-                                        <div className="flex items-center justify-between w-full">
-                                          <span>{product.name}</span>
-                                          <Badge variant="outline" className="ml-2 text-xs">
-                                            {product.type}
-                                          </Badge>
-                                        </div>
-                                      </SelectItem>
-                                    ))
-                                  )}
-                                </SelectContent>
-                              </Select>
+                              <Controller
+                                name={`items.${index}.productId` as any}
+                                control={control}
+                                render={({ field }) => (
+                                  <ForeignKeyField
+                                    value={field.value || null}
+                                    onChange={(value) => {
+                                      field.onChange(value);
+                                      if (value) {
+                                        handleProductSelect(value as string, index);
+                                      }
+                                    }}
+                                    options={products.map(product => ({
+                                      id: product.id,
+                                      label: product.name,
+                                      description: `HSN: ${product.hsnProductTax.code}`,
+                                      ...product
+                                    }))}
+                                    placeholder="Select product or service"
+                                    searchPlaceholder="Search products..."
+                                    loading={isLoadingProducts}
+                                    disabled={isProcessing || isLoadingProducts}
+                                    className={autoFilledFields.has('items') ? 'bg-green-50 border-green-300' : ''}
+                                    renderOption={(option) => (
+                                      <div className="flex items-center justify-between w-full gap-2">
+                                        <span className="flex-1">{option.label}</span>
+                                        <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-300">
+                                          {option.hsnProductTax?.code}
+                                        </Badge>
+                                      </div>
+                                    )}
+                                    renderSelected={(option) => (
+                                      <div className="flex items-center gap-2">
+                                        <span>{option.label}</span>
+                                        <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-300">
+                                          {option.hsnProductTax?.code}
+                                        </Badge>
+                                      </div>
+                                    )}
+                                  />
+                                )}
+                              />
                               {/* Hidden input to store the product name for form submission */}
                               <input
                                 type="hidden"
@@ -908,6 +937,42 @@ const VoiceInput = () => {
                               </Button>
                             )}
                           </div>
+
+                        <div className="grid grid-cols-3 gap-3 pt-2">
+                          <div className="space-y-2">
+                            <Label className="text-xs">HSN/SAC Code</Label>
+                            <Input
+                              type="text"
+                              {...register(`items.${index}.hsnCode` as const)}
+                              placeholder="HSN/SAC Code"
+                              disabled={isProcessing}
+                              readOnly
+                              className={watch(`items.${index}.hsnCode`) ? 'bg-blue-50 border-blue-300' : 'bg-muted'}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-xs">Category</Label>
+                            <Input
+                              type="text"
+                              {...register(`items.${index}.category` as const)}
+                              placeholder="Category"
+                              disabled={isProcessing}
+                              readOnly
+                              className={watch(`items.${index}.category`) ? 'bg-blue-50 border-blue-300' : 'bg-muted'}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-xs">Tax %</Label>
+                            <Input
+                              type="text"
+                              {...register(`items.${index}.taxPercentage` as const)}
+                              placeholder="Tax %"
+                              disabled={isProcessing}
+                              readOnly
+                              className={watch(`items.${index}.taxPercentage`) ? 'bg-blue-50 border-blue-300' : 'bg-muted'}
+                            />
+                          </div>
+                        </div>  
 
                         <div className="grid grid-cols-3 gap-3">
                           <div className="space-y-2">
@@ -937,7 +1002,13 @@ const VoiceInput = () => {
                             <Label className="text-xs">Amount (₹)</Label>
                             <Input
                               type="number"
-                              value={watch(`items.${index}.quantity`) * watch(`items.${index}.unitPrice`) || 0}
+                              value={(() => {
+                                const quantity = watch(`items.${index}.quantity`) || 0;
+                                const unitPrice = watch(`items.${index}.unitPrice`) || 0;
+                                const taxPercentage = watch(`items.${index}.taxPercentage`);
+                                const gstRate = taxPercentage ? parseFloat(taxPercentage.replace('%', '')) : 0;
+                                return (quantity * unitPrice * (1 + gstRate / 100)).toFixed(2);
+                              })()}
                               readOnly
                               className="bg-muted"
                             />
@@ -954,7 +1025,7 @@ const VoiceInput = () => {
               <div className="space-y-4 p-4 rounded-xl bg-accent/5 border border-accent/20">
                 <h4 className="font-semibold text-foreground">Financial Summary</h4>
                 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="discount" className="text-sm font-medium">
                       Discount (%)
@@ -971,42 +1042,25 @@ const VoiceInput = () => {
                       className={autoFilledFields.has('discount') ? 'bg-green-50 border-green-300' : ''}
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="taxPercent" className="text-sm font-medium">
-                      Tax (%)
-                    </Label>
-                    <Input
-                      id="taxPercent"
-                      type="number"
-                      {...register('taxPercent', { valueAsNumber: true })}
-                      placeholder="18"
-                      min="0"
-                      max="100"
-                      step="0.01"
-                      disabled={isProcessing}
-                      className={autoFilledFields.has('taxPercent') ? 'bg-green-50 border-green-300' : ''}
-                    />
-                  </div>
                 </div>
 
                 {/* Calculation Summary */}
                 <div className="space-y-2 pt-3 border-t border-border">
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Subtotal:</span>
+                    <span className="text-muted-foreground">Subtotal (incl. GST):</span>
                     <span className="font-medium">₹{subtotal.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Discount ({discount}%):</span>
                     <span className="font-medium text-red-600">-₹{discountAmount.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Tax ({taxPercent}%):</span>
-                    <span className="font-medium">₹{taxAmount.toFixed(2)}</span>
-                  </div>
                   <div className="flex justify-between text-lg font-bold pt-2 border-t border-border">
                     <span className="text-accent">Total Amount:</span>
                     <span className="text-accent">₹{total.toFixed(2)}</span>
                   </div>
+                  <p className="text-xs text-muted-foreground pt-1">
+                    * GST is included in each line item amount
+                  </p>
                 </div>
               </div>
 
@@ -1041,32 +1095,51 @@ const VoiceInput = () => {
                     console.log('[Submit] selectedClient:', selectedClient);
                     console.log('[Submit] selectedClient.id:', selectedClient?.id, 'Type:', typeof selectedClient?.id);
                     
-                    // Calculate amount for each item before submission
-                    const itemsWithAmount = formData.items.map(item => ({
-                      ...item,
-                      amount: item.quantity * item.unitPrice
-                    }));
+                    // Calculate amount for each item with GST included
+                    const itemsWithAmount = formData.items.map(item => {
+                      const quantity = item.quantity || 0;
+                      const unitPrice = item.unitPrice || 0;
+                      const taxPercentage = item.taxPercentage;
+                      const gstRate = taxPercentage ? parseFloat(taxPercentage.replace('%', '')) : 0;
+                      
+                      const baseAmount = quantity * unitPrice;
+                      const taxAmount = baseAmount * (gstRate / 100);
+                      const itemAmount = baseAmount + taxAmount;
+                      
+                      return {
+                        ...item,
+                        taxPercent: gstRate,
+                        taxAmount: taxAmount,
+                        amount: itemAmount
+                      };
+                    });
                     
-                    // Calculate financial totals
+                    // Calculate financial totals (GST already included in item amounts)
                     const calculatedSubtotal = itemsWithAmount.reduce((sum, item) => sum + (item.amount || 0), 0);
                     const calculatedDiscountAmount = (calculatedSubtotal * (formData.discount || 0)) / 100;
-                    const calculatedTaxableAmount = calculatedSubtotal - calculatedDiscountAmount;
-                    const calculatedTaxAmount = (calculatedTaxableAmount * (formData.taxPercent || 0)) / 100;
-                    const calculatedTotal = calculatedTaxableAmount + calculatedTaxAmount;
+                    const calculatedTotal = calculatedSubtotal - calculatedDiscountAmount;
                     
-                    // Prepare final invoice data with calculated amounts
+                    // Prepare final invoice data with calculated amounts (remove overall taxPercent)
                     const invoiceDataToSubmit: InvoiceFormData = {
                       ...formData,
                       items: itemsWithAmount,
                       clientId: selectedClient ? selectedClient.id : formData.clientId,
                       subtotalAmount: calculatedSubtotal,
                       totalAmount: calculatedTotal,
+                      taxPercent: undefined, // Remove overall tax percent from payload
                     };
                     
                     console.log('Invoice Data to Submit:', invoiceDataToSubmit);
                     console.log('Invoice clientId:', invoiceDataToSubmit.clientId, 'Type:', typeof invoiceDataToSubmit.clientId);
                     console.log('Subtotal Amount:', invoiceDataToSubmit.subtotalAmount);
                     console.log('Total Amount:', invoiceDataToSubmit.totalAmount);
+                    console.log('Items with tax:', invoiceDataToSubmit.items.map(item => ({
+                      name: item.name,
+                      taxPercent: item.taxPercent,
+                      taxAmount: item.taxAmount,
+                      amount: item.amount
+                    })));
+                    console.log('Overall taxPercent removed:', invoiceDataToSubmit.taxPercent);
                     
                     // Navigate to invoice preview with form data
                     navigate("/invoice-preview", { 
@@ -1186,32 +1259,33 @@ const VoiceInput = () => {
                       <h4 className="font-semibold text-foreground">{product.name}</h4>
                       <Badge 
                         variant="outline" 
-                        className={product.type === 'GOODS' 
-                          ? 'bg-blue-50 text-blue-700 border-blue-300' 
-                          : 'bg-purple-50 text-purple-700 border-purple-300'
-                        }
+                        className="bg-blue-50 text-blue-700 border-blue-300"
                       >
-                        {product.type}
+                        {product.hsnProductTax.type}
                       </Badge>
                     </div>
                     
                     <div className="grid grid-cols-2 gap-3 text-sm">
                       <div>
-                        <span className="text-muted-foreground">HSN/SAC:</span>
-                        <span className="ml-2 font-medium">{product.hsnOrSac}</span>
+                        <span className="text-muted-foreground">HSN/SAC Code:</span>
+                        <span className="ml-2 font-medium">{product.hsnProductTax.code}</span>
                       </div>
                       <div>
-                        <span className="text-muted-foreground">GST Rate:</span>
-                        <span className="ml-2 font-medium">{product.gstRate}%</span>
+                        <span className="text-muted-foreground">Category:</span>
+                        <span className="ml-2 font-medium">{product.hsnProductTax.category}</span>
                       </div>
                       <div>
-                        <span className="text-muted-foreground">UOM:</span>
-                        <span className="ml-2 font-medium">{product.uom}</span>
+                        <span className="text-muted-foreground">Tax:</span>
+                        <span className="ml-2 font-medium">{product.hsnProductTax.taxPercentage}</span>
                       </div>
                       <div>
                         <span className="text-muted-foreground">Sale Price:</span>
                         <span className="ml-2 font-medium text-green-600">₹{product.salePrice.toLocaleString()}</span>
                       </div>
+                    </div>
+                    
+                    <div className="text-xs text-muted-foreground pt-1">
+                      {product.hsnProductTax.description}
                     </div>
                   </div>
                   

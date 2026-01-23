@@ -1,13 +1,23 @@
 // Product types for line items
 export type ProductType = 'GOODS' | 'SERVICE';
+export type HsnSacType = 'HSN' | 'SAC';
+
+export interface HsnProductTax {
+  id: string;
+  code: string;
+  category: string;
+  description: string;
+  taxPercentage: string;
+  type: HsnSacType;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export interface Product {
   id: string;
-  type: ProductType;
   name: string;
-  hsnOrSac: string;
-  gstRate: number;
-  uom: string;
+  hsnProductTaxId: string;
+  hsnProductTax: HsnProductTax;
   salePrice: number;
   isActive: boolean;
   createdAt: string;

@@ -48,16 +48,22 @@ const InvoicePreview = () => {
     }
   }, [passedInvoiceData, navigate, toast]);
 
-  // Calculate totals
-  const subtotal = passedInvoiceData?.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0) || 0;
+  // Calculate totals with GST included in each item
+  const subtotal = passedInvoiceData?.items.reduce((sum, item) => {
+    const quantity = item.quantity || 0;
+    const unitPrice = item.unitPrice || 0;
+    const taxPercentage = item.taxPercentage;
+    const gstRate = taxPercentage ? parseFloat(taxPercentage.replace('%', '')) : 0;
+    const itemAmount = quantity * unitPrice * (1 + gstRate / 100);
+    return sum + itemAmount;
+  }, 0) || 0;
+  
   const discountAmount = (subtotal * (passedInvoiceData?.discount || 0)) / 100;
-  const taxableAmount = subtotal - discountAmount;
-  const taxAmount = (taxableAmount * (passedInvoiceData?.taxPercent || 0)) / 100;
-  const total = taxableAmount + taxAmount;
+  const total = subtotal - discountAmount;
 
   // Company info (this should come from settings/profile in a real app)
   const companyInfo = {
-    name: "Your Company Name",
+    name: "Ensar Solutions",
     address: "123 Business Street, Mumbai, MH 400001",
     email: "contact@yourcompany.com",
     phone: "+91 98765 43210",
@@ -78,8 +84,7 @@ const InvoicePreview = () => {
           description: "Invoice has been finalized and created successfully.",
         });
         
-        // Navigate to invoices list or dashboard
-        navigate("/work-orders"); // or wherever you want to redirect
+        navigate("/invoices");
       } else {
         throw new Error(response.message || 'Failed to create invoice');
       }
@@ -203,47 +208,131 @@ const InvoicePreview = () => {
                   <thead>
                     <tr className="bg-primary text-primary-foreground">
                       <th className="text-left py-3 px-4 rounded-l-lg font-medium">Item</th>
+                      <th className="text-left py-3 px-4 font-medium">HSN/SAC</th>
+                      <th className="text-left py-3 px-4 font-medium">Category</th>
                       <th className="text-center py-3 px-4 font-medium">Qty</th>
                       <th className="text-right py-3 px-4 font-medium">Rate</th>
+                      <th className="text-center py-3 px-4 font-medium">GST</th>
                       <th className="text-right py-3 px-4 rounded-r-lg font-medium">Amount</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {passedInvoiceData.items.map((item, index) => (
-                      <tr key={index} className="border-b border-border">
-                        <td className="py-4 px-4 font-medium text-foreground">{item.name}</td>
-                        <td className="py-4 px-4 text-center text-foreground">{item.quantity}</td>
-                        <td className="py-4 px-4 text-right text-foreground">₹{item.unitPrice.toLocaleString()}</td>
-                        <td className="py-4 px-4 text-right font-semibold text-foreground">
-                          ₹{(item.quantity * item.unitPrice).toLocaleString()}
-                        </td>
-                      </tr>
-                    ))}
+                    {passedInvoiceData.items.map((item, index) => {
+                      const quantity = item.quantity || 0;
+                      const unitPrice = item.unitPrice || 0;
+                      const taxPercentage = item.taxPercentage;
+                      const gstRate = taxPercentage ? parseFloat(taxPercentage.replace('%', '')) : 0;
+                      const itemAmount = quantity * unitPrice * (1 + gstRate / 100);
+                      
+                      return (
+                        <tr key={index} className="border-b border-border">
+                          <td className="py-4 px-4 font-medium text-foreground">{item.name}</td>
+                          <td className="py-4 px-4 text-foreground">
+                            <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded border border-blue-300">
+                              {item.hsnCode || 'N/A'}
+                            </span>
+                          </td>
+                          <td className="py-4 px-4 text-sm text-muted-foreground">{item.category || 'N/A'}</td>
+                          <td className="py-4 px-4 text-center text-foreground">{quantity}</td>
+                          <td className="py-4 px-4 text-right text-foreground">₹{unitPrice.toLocaleString()}</td>
+                          <td className="py-4 px-4 text-center">
+                            <span className="text-xs bg-green-50 text-green-700 px-2 py-1 rounded border border-green-300 font-medium">
+                              {item.taxPercentage || '0%'}
+                            </span>
+                          </td>
+                          <td className="py-4 px-4 text-right font-semibold text-foreground">
+                            ₹{itemAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
 
+              {/* GST Breakdown Summary */}
+              <div className="mb-8 p-4 rounded-xl bg-secondary/30 border border-border">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">GST Breakdown</p>
+                <div className="space-y-2">
+                  {(() => {
+                    // Group items by GST rate
+                    const gstGroups = passedInvoiceData.items.reduce((acc, item) => {
+                      const quantity = item.quantity || 0;
+                      const unitPrice = item.unitPrice || 0;
+                      const taxPercentage = item.taxPercentage || '0%';
+                      const gstRate = parseFloat(taxPercentage.replace('%', ''));
+                      
+                      const baseAmount = quantity * unitPrice;
+                      const gstAmount = baseAmount * (gstRate / 100);
+                      const totalAmount = baseAmount + gstAmount;
+                      
+                      if (!acc[taxPercentage]) {
+                        acc[taxPercentage] = {
+                          rate: taxPercentage,
+                          baseAmount: 0,
+                          gstAmount: 0,
+                          totalAmount: 0
+                        };
+                      }
+                      
+                      acc[taxPercentage].baseAmount += baseAmount;
+                      acc[taxPercentage].gstAmount += gstAmount;
+                      acc[taxPercentage].totalAmount += totalAmount;
+                      
+                      return acc;
+                    }, {} as Record<string, { rate: string; baseAmount: number; gstAmount: number; totalAmount: number }>);
+                    
+                    return Object.values(gstGroups).map((group, index) => (
+                      <div key={index} className="flex justify-between items-center text-sm py-2 border-b border-border last:border-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs bg-green-50 text-green-700 px-2 py-1 rounded border border-green-300 font-medium">
+                            {group.rate}
+                          </span>
+                          <span className="text-muted-foreground">GST on ₹{group.baseAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        </div>
+                        <span className="font-medium text-foreground">
+                          ₹{group.gstAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    ));
+                  })()}
+                  <div className="flex justify-between items-center text-sm pt-2 border-t-2 border-border">
+                    <span className="font-semibold text-foreground">Total GST Amount</span>
+                    <span className="font-bold text-accent">
+                      ₹{passedInvoiceData.items.reduce((sum, item) => {
+                        const quantity = item.quantity || 0;
+                        const unitPrice = item.unitPrice || 0;
+                        const taxPercentage = item.taxPercentage || '0%';
+                        const gstRate = parseFloat(taxPercentage.replace('%', ''));
+                        const baseAmount = quantity * unitPrice;
+                        const gstAmount = baseAmount * (gstRate / 100);
+                        return sum + gstAmount;
+                      }, 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
               {/* Totals */}
               <div className="flex justify-end mb-8">
-                <div className="w-full sm:w-64 space-y-2">
+                <div className="w-full sm:w-80 space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Subtotal</span>
-                    <span className="text-foreground">₹{subtotal.toLocaleString()}</span>
+                    <span className="text-muted-foreground">Subtotal (incl. GST)</span>
+                    <span className="text-foreground font-medium">₹{subtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
                   {passedInvoiceData.discount > 0 && (
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Discount ({passedInvoiceData.discount}%)</span>
-                      <span className="text-red-600">-₹{discountAmount.toLocaleString()}</span>
+                      <span className="text-red-600 font-medium">-₹{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                   )}
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">GST ({passedInvoiceData.taxPercent}%)</span>
-                    <span className="text-foreground">₹{taxAmount.toLocaleString()}</span>
-                  </div>
                   <div className="flex justify-between pt-2 border-t border-border">
-                    <span className="text-lg font-semibold text-foreground">Total</span>
-                    <span className="text-lg font-bold text-accent">₹{total.toLocaleString()}</span>
+                    <span className="text-lg font-semibold text-foreground">Total Amount</span>
+                    <span className="text-lg font-bold text-accent">₹{total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
+                  <p className="text-xs text-muted-foreground pt-1">
+                    * GST is included in line item amounts
+                  </p>
                 </div>
               </div>
 

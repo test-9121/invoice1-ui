@@ -2,8 +2,11 @@
 
 export interface Permission {
   id: string;
-  name: string;
+  name?: string; // Legacy field, might not be present
+  module: string;
+  action: string;
   description: string;
+  permissionString: string;
   category?: string;
   createdAt?: string;
   updatedAt?: string;

@@ -101,6 +101,56 @@ export class UserService {
       throw error;
     }
   }
+
+  async getUserRoles(userId: string): Promise<{ success: boolean; data: any[]; message: string }> {
+    try {
+      const response = await apiClient.get<{ success: boolean; data: any[]; message: string }>(`${this.basePath}/${userId}/roles`, true);
+      return response;
+    } catch (error: any) {
+      console.error('[UserService] Error fetching user roles:', error);
+      throw error;
+    }
+  }
+
+  async assignRolesToUser(userId: string, roleIds: string[]): Promise<{ success: boolean; data: any; message: string }> {
+    try {
+      const response = await apiClient.post<{ success: boolean; data: any; message: string }>(
+        `${this.basePath}/${userId}/roles/bulk`,
+        roleIds,
+        true
+      );
+      return response;
+    } catch (error: any) {
+      console.error('[UserService] Error assigning roles to user:', error);
+      throw error;
+    }
+  }
+
+  async removeRoleFromUser(userId: string, roleId: string): Promise<{ success: boolean; data: any; message: string }> {
+    try {
+      const response = await apiClient.delete<{ success: boolean; data: any; message: string }>(
+        `${this.basePath}/${userId}/roles/${roleId}`,
+        true
+      );
+      return response;
+    } catch (error: any) {
+      console.error('[UserService] Error removing role from user:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get current user profile
+   */
+  async getCurrentUser(): Promise<{ success: boolean; data: User; message: string }> {
+    try {
+      const response = await apiClient.get<{ success: boolean; data: User; message: string }>(`${this.basePath}/me`, true);
+      return response;
+    } catch (error: any) {
+      console.error('[UserService] Error fetching current user:', error);
+      throw error;
+    }
+  }
 }
 
 // Export singleton instance

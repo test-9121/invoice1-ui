@@ -138,7 +138,7 @@ const Clients = () => {
             <div className="relative flex-1 max-w-md">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input 
-                placeholder="Search clients..." 
+                placeholder="Search by client name, email or phone number..." 
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-11"
@@ -176,7 +176,7 @@ const Clients = () => {
         </motion.div>
 
         {/* Voice Shortcuts */}
-        <motion.div
+        {/* <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
@@ -189,7 +189,7 @@ const Clients = () => {
             <span className="text-foreground font-medium ml-2">"Show clients with pending invoices"</span>,
             <span className="text-foreground font-medium ml-2">"Search [name]"</span>
           </p>
-        </motion.div>
+        </motion.div> */}
 
         {/* Error State */}
         {error && (
@@ -316,13 +316,13 @@ const Clients = () => {
                         </td>
                         <td className="py-4 px-6">
                           <div className="flex items-center justify-end gap-2">
-                            <button
+                            {/* <button
                               onClick={() => handleViewClient(client)}
                               className="p-2 rounded-lg hover:bg-secondary transition-colors"
                               title="View details"
                             >
                               <Eye className="w-4 h-4 text-muted-foreground" />
-                            </button>
+                            </button> */}
                             <button
                               onClick={() => handleEditClient(client)}
                               className="p-2 rounded-lg hover:bg-secondary transition-colors"

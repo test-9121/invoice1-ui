@@ -11,6 +11,11 @@ export interface InvoiceItem {
   description?: string;
   productId?: string;
   productMatches?: Product[] | null;
+  hsnCode?: string;
+  category?: string;
+  taxPercentage?: string;
+  taxPercent?: number;
+  taxAmount?: number;
 }
 
 export interface VoiceInvoiceData {
@@ -35,12 +40,12 @@ export interface VoiceInvoiceResponse {
 
 export interface InvoiceFormData {
   clientId?: string; // Foreign key to client (UUID)
-  clientName: string; // Display name (will be mapped from client)
+  clientName?: string; // Display name (will be mapped from client)
   issuedDate: string;
   dueDate: string;
   items: InvoiceItem[];
   discount: number;
-  taxPercent: number;
+  taxPercent?: number; // Optional - tax is now calculated per item
   notes: string;
   subtotalAmount?: number; // Calculated field
   totalAmount?: number; // Calculated field
